@@ -1,9 +1,10 @@
 # Poder & Mercado
 
 Indicadores da economia brasileira desde 1995, cada um num gráfico com o
-fundo colorido por governo (FHC, Lula I, Lula II, Dilma, Temer, Bolsonaro e
-Lula III). Site estático, sem build: `index.html` + `app.js` + `styles.css`,
-com os dados em `dados/`.
+fundo colorido por governo (FHC I e II, Lula I e II, Dilma I e II, Temer,
+Bolsonaro e Lula), com o retrato oficial do presidente e, embaixo dele, a
+variação e a média do período. Site estático, sem build: `index.html` +
+`app.js` + `styles.css`, com os dados em `dados/`.
 
 - **Modo escuro/claro** — botão no topo (o escuro é o padrão e reproduz o
   visual do gráfico de referência; a escolha fica salva no navegador).
@@ -12,6 +13,8 @@ com os dados em `dados/`.
 - **Período** — Tudo / 20 / 10 / 5 anos. O IPCA abre em 1996 porque o valor de
   jan/1995 (631%) achata todo o resto; "Tudo" mostra desde 1995.
 - Passe o mouse (ou toque) no gráfico para ver o valor do mês e o governo.
+- Na largura de celular o gráfico vira retrato e mostra só as fotos e os nomes:
+  os números do mandato não cabem em faixa estreita sem virar borrão.
 
 ## Como atualizar os dados
 
@@ -35,6 +38,23 @@ Uma série sem nenhum valor na coluna (hoje **Dívida Líquida** e **Dívida
 Bruta**) aparece como cartão "sem dados ainda" — basta preencher a coluna e
 rodar o script de novo.
 
+### Δ e Média de cada mandato
+
+Calculados na hora de desenhar, sobre os meses **visíveis** da faixa (com
+"Tudo" selecionado, é o mandato inteiro). O campo `variacao` em
+`scripts/gerar_dados.py` escolhe a conta:
+
+| `variacao` | Δ mostrado | Usado em |
+|---|---|---|
+| `"pct"` | variação % do primeiro ao último mês | Ibovespa, Ibovespa em dólar, IED |
+| `"abs"` | diferença do primeiro ao último mês — em p.p. quando a série já é % | Selic, IPCA, Dólar, Primário, Endividamento |
+| `"soma"` | `Total:` do período, e a média vira por mês | IPOs (contagem) |
+
+`minEixo` trava o piso do eixo Y (o Endividamento começa em 10%).
+
+Para o gráfico caber, a escala do eixo Y ganha folga no topo até a linha passar
+por baixo dos retratos; quando nem assim cabe, o retrato encolhe.
+
 ### Para mudar título, unidade ou casas decimais
 
 Fica no topo de `scripts/gerar_dados.py` (lista `INDICADORES`). Os rótulos de
@@ -47,9 +67,11 @@ unidade são **suposições** a confirmar contra o Excel:
 
 ### Governos
 
-`GOVERNOS` no mesmo script agrupa os mandatos da aba *Presidentes*: FHC (I+II)
-e Dilma (I+II) viram uma faixa cada; o resto segue o Excel. As cores só
-distinguem os governos entre si.
+`GOVERNOS` no mesmo script agrupa os mandatos da aba *Presidentes*: mandatos
+seguidos da mesma pessoa viram uma faixa só (FHC I+II, Lula I+II, Dilma I+II).
+As cores foram amostradas do modelo feito no PowerPoint e só servem para
+distinguir uma faixa da outra. Cada faixa aponta para o retrato oficial em
+`assets/presidentes/` — trocar a foto é trocar o arquivo, mantendo o nome.
 
 ## Testar localmente
 
@@ -62,6 +84,7 @@ python3 -m http.server 8000   # http://localhost:8000
 ```
 index.html  styles.css  app.js
 assets/     fundo.jpg, logo.png, logo-claro.png (logo para o tema claro), favicon.svg
+            presidentes/ — retratos oficiais usados nas faixas
 dados/      indicadores.json, mandatos.json (gerados)
 scripts/    gerar_dados.py
 ```

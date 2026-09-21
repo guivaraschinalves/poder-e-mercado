@@ -29,36 +29,49 @@ SAIDA_MANDATOS = os.path.join(RAIZ, "dados", "mandatos.json")
 
 # Coluna do Excel → configuração do gráfico. A ordem daqui é a ordem na página.
 # formato: "pct" (fração → %), "num" (número com casas), "int" (inteiro).
+# variacao: como o Δ de cada mandato é calculado — "abs" (último menos primeiro
+# mês, na unidade da série; em p.p. quando é %), "pct" (variação percentual) ou
+# "soma" (total do período, para contagem).
+# minEixo: trava o piso do eixo Y (senão ele é escolhido pelos dados).
 INDICADORES = [
-    ("B", "selic", dict(titulo="Selic", subtitulo="% a.a.", formato="pct", casas=2, tipo="linha")),
+    ("B", "selic", dict(titulo="Selic", subtitulo="% a.a.", formato="pct", casas=2, tipo="linha",
+                        variacao="abs")),
     ("C", "ipca", dict(titulo="IPCA", subtitulo="Var. % acumulada em 12 meses", formato="pct", casas=2, tipo="linha",
-                       inicioPadrao="1996-01")),
-    ("D", "dolar", dict(titulo="Dólar", subtitulo="R$ por US$", formato="num", casas=2, prefixo="R$ ", tipo="linha")),
-    ("E", "ibov", dict(titulo="Ibovespa", subtitulo="Pontos", formato="num", casas=0, tipo="linha")),
-    ("F", "ibov-dolar", dict(titulo="Ibovespa em dólar", subtitulo="Pontos (Ibovespa / dólar)", formato="num", casas=0,
-                             tipo="linha")),
-    ("G", "primario", dict(titulo="Resultado Primário", subtitulo="% do PIB", formato="pct", casas=2, tipo="linha")),
-    ("H", "divida-liquida", dict(titulo="Dívida Líquida", subtitulo="% do PIB", formato="pct", casas=2, tipo="linha")),
-    ("I", "divida-bruta", dict(titulo="Dívida Bruta", subtitulo="% do PIB", formato="pct", casas=2, tipo="linha")),
+                       variacao="abs", inicioPadrao="1996-01")),
+    ("D", "dolar", dict(titulo="Dólar", subtitulo="R$ por US$", formato="num", casas=2, prefixo="R$ ",
+                        tipo="linha", variacao="abs")),
+    ("E", "ibov", dict(titulo="Ibovespa", subtitulo="Pontos", formato="num", casas=0, tipo="linha",
+                       variacao="pct")),
+    ("F", "ibov-dolar", dict(titulo="Ibovespa em dólar", subtitulo="Pontos (Ibovespa / dólar)", formato="num",
+                             casas=0, tipo="linha", variacao="pct")),
+    ("G", "primario", dict(titulo="Resultado Primário", subtitulo="% do PIB", formato="pct", casas=2,
+                           tipo="linha", variacao="abs")),
+    ("H", "divida-liquida", dict(titulo="Dívida Líquida", subtitulo="% do PIB", formato="pct", casas=2,
+                                 tipo="linha", variacao="abs")),
+    ("I", "divida-bruta", dict(titulo="Dívida Bruta", subtitulo="% do PIB", formato="pct", casas=2,
+                               tipo="linha", variacao="abs")),
     ("J", "ied", dict(titulo="Investimento Estrangeiro Direto", subtitulo="US$ milhões", formato="num", casas=0,
-                      prefixo="US$ ", sufixo=" mi", tipo="linha")),
+                      prefixo="US$ ", sufixo=" mi", tipo="linha", variacao="pct")),
     ("K", "familias", dict(titulo="Endividamento das Famílias", subtitulo="Exc. crédito habitacional", formato="pct",
-                           casas=2, tipo="linha")),
-    ("L", "ipos", dict(titulo="IPOs na B3", subtitulo="Número de IPOs", formato="int", casas=0, tipo="barras")),
+                           casas=2, tipo="linha", variacao="abs", minEixo=0.10)),
+    ("L", "ipos", dict(titulo="IPOs na B3", subtitulo="Número de IPOs", formato="int", casas=0, tipo="barras",
+                       variacao="soma")),
 ]
 
 FONTE_PADRAO = "BCB e FtM"
 
-# Presidentes da aba "Presidentes" → governos exibidos (FHC e Dilma unem os dois mandatos).
+# Presidentes da aba "Presidentes" → faixas exibidas. Os mandatos seguidos da
+# mesma pessoa viram uma faixa só (FHC I+II, Lula I+II, Dilma I+II), como no
+# modelo feito no PowerPoint. As cores foram amostradas desse modelo; a foto é
+# o retrato oficial de cada presidente, em assets/presidentes/.
 GOVERNOS = [
-    ("fhc", "FHC", ["FHC I", "FHC II"], "#0fa3b1"),
-    ("lula1", "Lula I", ["Lula I"], "#f2b134"),
-    ("lula2", "Lula II", ["Lula II"], "#e4572e"),
-    ("dilma", "Dilma", ["Dilma I", "Dilma II"], "#9b5de5"),
-    ("temer", "Temer", ["Temer"], "#8d99ae"),
-    ("bolsonaro", "Bolsonaro", ["Bolsonaro"], "#43aa8b"),
-    ("lula3", "Lula III", ["Lula III"], "#f15bb5"),
-]  # cores só distinguem os governos entre si — sem relação com partidos
+    ("fhc", "FHC I e II", ["FHC I", "FHC II"], "#2E5072", "fhc.jpg"),
+    ("lula12", "Lula I e II", ["Lula I", "Lula II"], "#8D5A2C", "lula12.jpg"),
+    ("dilma", "Dilma I e II", ["Dilma I", "Dilma II"], "#6D3331", "dilma.jpg"),
+    ("temer", "Temer", ["Temer"], "#12304E", "temer.jpg"),
+    ("bolsonaro", "Bolsonaro", ["Bolsonaro"], "#2E6875", "bolsonaro.jpg"),
+    ("lula3", "Lula", ["Lula III"], "#687634", "lula3.jpg"),
+]
 
 
 def serial_para_mes(n):
@@ -149,9 +162,10 @@ def main():
             periodos[nome] = (min(marcados), max(marcados))
 
     mandatos = []
-    for id_, rotulo, partes, cor in GOVERNOS:
+    for id_, rotulo, partes, cor, foto in GOVERNOS:
         faixa = [periodos[p] for p in partes]
-        mandatos.append(dict(id=id_, nome=rotulo, cor=cor, inicio=min(f[0] for f in faixa), fim=max(f[1] for f in faixa)))
+        mandatos.append(dict(id=id_, nome=rotulo, cor=cor, foto="assets/presidentes/" + foto,
+                             inicio=min(f[0] for f in faixa), fim=max(f[1] for f in faixa)))
     with open(SAIDA_MANDATOS, "w", encoding="utf-8") as f:
         json.dump({"mandatos": mandatos}, f, ensure_ascii=False, indent=1)
     print("Mandatos:", [(m["nome"], m["inicio"], m["fim"]) for m in mandatos])

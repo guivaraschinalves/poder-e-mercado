@@ -3,6 +3,9 @@
  * Tudo é desenhado em SVG por este arquivo, com cores em atributos (nada de
  * CSS dentro do SVG): assim o mesmo desenho serve para a tela, para o SVG
  * baixado e para o PNG (que serializa o SVG num canvas).
+ *
+ * Cada mandato vira uma faixa colorida com o nome acima do gráfico, o retrato
+ * oficial do presidente e, embaixo dele, a variação e a média do período.
  */
 (function () {
   "use strict";
@@ -16,39 +19,42 @@
 
   var PALETAS = {
     dark: {
-      texto: "#ffffff", suave: "rgba(255,255,255,.74)", grade: "rgba(255,255,255,.11)",
-      zero: "rgba(255,255,255,.5)", linha: "#5b8dd6", selo: "#4a7bc4", seloTexto: "#ffffff",
-      faixaOp: 0.17, faixaTexto: 1, bg: "#04100f", tipBg: "rgba(4,16,15,.94)", tipBorda: "rgba(255,255,255,.3)",
-      logo: "assets/logo.png"
+      texto: "#ffffff", eixo: "#ffffff", suave: "rgba(255,255,255,.8)", grade: "rgba(255,255,255,.14)",
+      zero: "rgba(255,255,255,.55)", linha: "#ffffff", selo: "#4a7bc4", seloTexto: "#ffffff",
+      faixaOp: 0.88, faixaNome: "#ffffff", bg: "#04100f",
+      tipBg: "rgba(4,16,15,.94)", tipBorda: "rgba(255,255,255,.35)", logo: "assets/logo.png"
     },
     light: {
-      texto: "#14202b", suave: "#5a6772", grade: "#e2e7ea",
-      zero: "#8a96a0", linha: "#2f5fae", selo: "#2f5fae", seloTexto: "#ffffff",
-      faixaOp: 0.15, faixaTexto: 0.62, bg: "#ffffff", tipBg: "rgba(255,255,255,.96)", tipBorda: "#b9c3ca",
-      logo: "assets/logo-claro.png"
+      texto: "#14202b", eixo: "#26313b", suave: "#5a6772", grade: "#dde3e7",
+      zero: "#8a96a0", linha: "#1d3f79", selo: "#2f5fae", seloTexto: "#ffffff",
+      faixaOp: 0.24, faixaNome: "#26313b", bg: "#ffffff",
+      tipBg: "rgba(255,255,255,.96)", tipBorda: "#b9c3ca", logo: "assets/logo-claro.png"
     }
   };
 
   var LAYOUTS = {
     wide: {
-      W: 1920, H: 1080, y0: 235, y1: 925,
-      titulo: { x: 40, y: 84, fs: 62 }, sub: { x: 42, y: 130, fs: 30 },
-      logo: { x: 1400, y: 36, w: 480 }, legenda: { y: 198, fs: 32 },
-      tick: 30, xlab: 28, selo: 34, fonte: { x: 1885, y: 1060, fs: 24 },
-      faixa: 28, tip: 30, linha: 6, eixoDuplo: true, faixaVertical: false, tituloMax: 1330
+      W: 1920, H: 1080, y0: 214, y1: 928,
+      titulo: { x: 40, y: 82, fs: 58 }, sub: { x: 42, y: 128, fs: 30 },
+      logo: { x: 1400, y: 34, w: 480 }, nome: { y: 190, fs: 32 },
+      faixa: { pad: 16, fotoH: 160, gap: 18, fs: 30 },
+      tick: 30, xlab: 28, selo: 34, fonte: { x: 1885, y: 1062, fs: 24 },
+      tip: 30, linha: 6, eixoDuplo: true, tituloMax: 1330
     },
     narrow: {
-      W: 1080, H: 1400, y0: 345, y1: 1130,
-      titulo: { x: 36, y: 165, fs: 68 }, sub: { x: 38, y: 218, fs: 38 },
-      logo: { x: 664, y: 30, w: 380 }, legenda: { y: 292, fs: 36 },
+      W: 1080, H: 1400, y0: 330, y1: 1120,
+      titulo: { x: 36, y: 150, fs: 66 }, sub: { x: 38, y: 205, fs: 38 },
+      logo: { x: 664, y: 30, w: 380 }, nome: { y: 305, fs: 30 },
+      faixa: { pad: 12, fotoH: 132, gap: 12, fs: 26 },
       tick: 36, xlab: 33, selo: 38, fonte: { x: 1044, y: 1372, fs: 30 },
-      faixa: 32, tip: 38, linha: 7, eixoDuplo: false, faixaVertical: true, tituloMax: 1008
+      tip: 38, linha: 7, eixoDuplo: false, tituloMax: 1008
     }
   };
 
   var cartoes = [];
   var mandatos = [];
   var meta = {};
+  var imagens = {};   // src → HTMLImageElement já carregado (para saber a proporção)
 
   // ---------- utilidades ----------
   function el(nome, attrs, filhos) {
@@ -78,6 +84,11 @@
     medidor.font = (peso || "normal") + " " + fs + "px " + FONT;
     return medidor.measureText(str).width;
   }
+  // maior corpo de fonte em que o texto cabe na largura dada
+  function corpoQueCabe(str, fsMax, disponivel, peso) {
+    var w = largura(str, 100, peso);
+    return Math.min(fsMax, disponivel / w * 100);
+  }
 
   var nfCache = {};
   function nf(casas) {
@@ -91,19 +102,10 @@
   function rotuloMesCurto(i) { return MESES[i % 12] + "/" + String(Math.floor(i / 12)).slice(-2); }
   function rotuloMesLongo(i) { return MESES_LONGOS[i % 12] + " de " + Math.floor(i / 12); }
 
-  function sombrear(hex, ate) {
-    // mistura a cor com preto (ate<1 escurece) — usada nos rótulos das faixas no tema claro
-    var n = parseInt(hex.slice(1), 16);
-    var r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
-    function c(v) { return Math.round(v * ate); }
-    return "rgb(" + c(r) + "," + c(g) + "," + c(b) + ")";
-  }
-
   // ---------- formatação de valores ----------
   function fmtValor(s, v) {
     if (s.formato === "pct") return nf(s.casas).format(v * 100) + "%";
-    var base = nf(s.casas).format(v);
-    return (s.prefixo || "") + base + (s.sufixo || "");
+    return (s.prefixo || "") + nf(s.casas).format(v) + (s.sufixo || "");
   }
   function fmtTick(s, v, passo) {
     if (s.formato === "pct") {
@@ -111,6 +113,31 @@
       return nf(p >= 1 ? 0 : p >= 0.1 ? 1 : 2).format(v * 100) + "%";
     }
     return nf(passo >= 1 ? 0 : passo >= 0.1 ? 1 : 2).format(v);
+  }
+  function comSinal(v, casas) { return (v > 0 ? "+" : v < 0 ? "−" : "") + nf(casas).format(Math.abs(v)); }
+
+  /* Variação e média do mandato. O Δ é do primeiro ao último mês visível da
+   * faixa: em % para índices (Ibovespa e IED), em pontos percentuais para as
+   * séries que já são %, e na própria unidade para o resto. Contagem (IPOs)
+   * não tem variação que signifique algo — mostra o total do período. */
+  function estatisticas(s, vals) {
+    var soma = vals.reduce(function (a, b) { return a + b; }, 0);
+    var media = soma / vals.length;
+    var prim = vals[0], ult = vals[vals.length - 1];
+    var tipo = s.variacao || "abs";
+    var delta;
+    if (tipo === "soma") {
+      // contagem: a média por mês só diz algo com uma casa decimal
+      return { delta: "Total: " + nf(0).format(soma), media: "Média: " + nf(1).format(media) + "/mês" };
+    }
+    if (tipo === "pct") {
+      delta = prim ? "Δ: " + comSinal((ult / prim - 1) * 100, 1) + "%" : "Δ: —";
+    } else if (s.formato === "pct") {
+      delta = "Δ: " + comSinal((ult - prim) * 100, 1) + " p.p.";
+    } else {
+      delta = "Δ: " + (s.prefixo || "") + comSinal(ult - prim, s.casas) + (s.sufixo || "");
+    }
+    return { delta: delta, media: "Média: " + fmtValor(s, media) };
   }
 
   // ---------- escala Y ----------
@@ -121,59 +148,175 @@
     for (var i = 0; i < cands.length; i++) if (cands[i] * mag >= bruto) return cands[i] * mag;
     return 10 * mag;
   }
-  function escalaY(vals) {
+  // opts.minFixo trava o piso do eixo; opts.altoMin força espaço extra no topo
+  function escalaY(vals, opts) {
+    opts = opts || {};
     var mn = Math.min.apply(null, vals), mx = Math.max.apply(null, vals);
-    var baixo = mn;
-    if (mn >= 0 && mn <= mx * 0.6) baixo = 0;
-    var alto = mx > 0 ? mx * 1.04 : mx;
+    var baixo = opts.minFixo !== undefined && opts.minFixo !== null ? opts.minFixo : mn;
+    if (opts.minFixo === undefined || opts.minFixo === null) {
+      if (mn >= 0 && mn <= mx * 0.6) baixo = 0;
+    }
+    var alto = Math.max(mx > 0 ? mx * 1.04 : mx, opts.altoMin || -Infinity);
     if (alto - baixo <= 0) alto = baixo + 1;
     var passo = passoBonito(alto - baixo, 5);
-    var min = Math.floor(baixo / passo + 1e-9) * passo;
-    var max = Math.ceil(alto / passo - 1e-9) * passo;
+    var min = opts.minFixo !== undefined && opts.minFixo !== null
+      ? opts.minFixo : Math.floor(baixo / passo + 1e-9) * passo;
+    var max = Math.ceil((alto - min) / passo - 1e-9) * passo + min;
     var ticks = [];
-    for (var v = min; v <= max + passo / 2; v += passo) ticks.push(Math.round(v / passo * 1e6) / 1e6 * passo);
+    for (var k = 0; min + k * passo <= max + passo / 2; k++) ticks.push(min + k * passo);
     return { min: min, max: max, passo: passo, ticks: ticks };
   }
 
   // ---------- desenho do gráfico ----------
-  function construir(cartao, L, nomeTema) {
+  function construir(cartao, L0, nomeTema) {
     var s = cartao.serie, pal = PALETAS[nomeTema];
     var todos = s.dados.map(function (d) { return { i: idxMes(d[0]), v: d[1] }; });
-    var primeiro = todos[0].i, ultimo = todos[todos.length - 1].i;
-    var d0 = Math.max(primeiro, cartao.inicioIdx === null ? primeiro : cartao.inicioIdx);
-    var d1 = ultimo + 1;
+    var d0 = Math.max(todos[0].i, cartao.inicioIdx === null ? todos[0].i : cartao.inicioIdx);
+    var d1 = todos[todos.length - 1].i + 1;
     var pts = todos.filter(function (p) { return p.i >= d0; });
+    var vals = pts.map(function (p) { return p.v; });
     var barras = s.tipo === "barras";
     var ult = pts[pts.length - 1];
-
-    var esc = escalaY(pts.map(function (p) { return p.v; }).concat(barras ? [0] : []));
-
-    // margens laterais dependem do que precisa caber: rótulos do eixo Y e o selo
-    // do último valor (que ocupa a coluna do eixo direito)
-    var tw = Math.max.apply(null, esc.ticks.map(function (t) { return largura(fmtTick(s, t, esc.passo), L.tick); }));
     var rotSelo = fmtValor(s, ult.v);
-    var sw = largura(rotSelo, L.selo, "bold") + 28;
-    L = Object.assign({}, L, {
-      x0: 26 + tw + 14,
-      x1: L.W - (26 + (L.eixoDuplo ? Math.max(tw, sw) : sw) + 14)
-    });
-    var pw = L.x1 - L.x0, ph = L.y1 - L.y0;
-    function X(i) { return L.x0 + (i - d0) / (d1 - d0) * pw; }
-    function Y(v) { return L.y1 - (v - esc.min) / (esc.max - esc.min) * ph; }
+    var fx = L0.faixa;
 
+    // As margens laterais dependem da largura dos rótulos do eixo e do selo do
+    // último valor — e os rótulos dependem da escala. Por isso a escala é
+    // calculada, usada para medir, e só então refeita com o espaço que o bloco
+    // de cada mandato (foto + Δ + média) exige no topo.
+    function comEscala(esc, escalaFoto) {
+      var tw = Math.max.apply(null, esc.ticks.map(function (t) { return largura(fmtTick(s, t, esc.passo), L0.tick); }));
+      var sw = largura(rotSelo, L0.selo, "bold") + 28;
+      var L = Object.assign({}, L0, {
+        x0: 26 + tw + 14,
+        x1: L0.W - (26 + (L0.eixoDuplo ? Math.max(tw, sw) : sw) + 14)
+      });
+      var pw = L.x1 - L.x0, ph = L.y1 - L.y0;
+      var X = function (i) { return L.x0 + (i - d0) / (d1 - d0) * pw; };
+      var Y = function (v) { return L.y1 - (v - esc.min) / (esc.max - esc.min) * ph; };
+
+      var fotoH = fx.fotoH * escalaFoto;
+      var statFs = fx.fs * Math.max(0.78, escalaFoto);
+      var blocos = [];
+      mandatos.forEach(function (m) {
+        var a = Math.max(idxMes(m.inicio), d0), b = Math.min(idxMes(m.fim) + 1, d1);
+        if (b <= a) return;
+        var dentro = pts.filter(function (p) { return p.i >= a && p.i < b; });
+        var bx0 = X(a), bx1 = X(b), bw = bx1 - bx0, cx = (bx0 + bx1) / 2;
+        var bloco = { m: m, a: a, b: b, x0: bx0, x1: bx1, cx: cx, largura: bw };
+        // Mandato curto (Temer) não comporta "Média: 22,06%" dentro da própria
+        // faixa: deixa o rótulo invadir um pouco a faixa vizinha — o texto dela
+        // é centralizado e fica longe. A checagem de colisão logo abaixo cuida
+        // do caso em que duas faixas estreitas ficam lado a lado.
+        var cabe = Math.max(bw - 10, Math.min(bw * 2.4, 210));
+        bloco.nomeFs = corpoQueCabe(m.nome, L.nome.fs, cabe, "bold");
+        bloco.nomeW = largura(m.nome, bloco.nomeFs, "bold");
+        if (dentro.length) {
+          var est = estatisticas(s, dentro.map(function (p) { return p.v; }));
+          var fsCabe = Math.min(statFs, corpoQueCabe(est.delta, statFs, cabe, "bold"),
+            corpoQueCabe(est.media, statFs, cabe, "bold"));
+          bloco.est = est;
+          bloco.statFs = fsCabe;
+          bloco.textoW = Math.max(largura(est.delta, fsCabe, "bold"), largura(est.media, fsCabe, "bold"));
+        }
+        var im = imagens[m.foto];
+        if (im && fotoH > 40) {
+          var fw = fotoH * (im.naturalWidth / im.naturalHeight);
+          if (fw > bw - 12) { fw = Math.max(0, bw - 12); }
+          if (fw >= 34) {
+            bloco.foto = { src: m.foto, w: fw, h: fw / (im.naturalWidth / im.naturalHeight) };
+          }
+        }
+        blocos.push(bloco);
+      });
+
+      // rótulos de faixas vizinhas não podem se encostar
+      for (var k = 0; k + 1 < blocos.length; k++) {
+        var A = blocos[k], B = blocos[k + 1];
+        var folga = B.cx - A.cx - 16;
+        ["nome", "texto"].forEach(function (campo) {
+          var wa = A[campo + "W"] || 0, wb = B[campo + "W"] || 0;
+          if (wa / 2 + wb / 2 <= folga) return;
+          var fator = folga / (wa / 2 + wb / 2);
+          [A, B].forEach(function (z) {
+            if (!z[campo + "W"]) return;
+            z[campo + "W"] *= fator;
+            if (campo === "nome") z.nomeFs *= fator; else z.statFs *= fator;
+          });
+        });
+      }
+      // Abaixo desse corpo o número vira borrão; se isso acontecer em metade
+      // ou mais das faixas (é o caso da versão estreita, de celular), tira de
+      // todas — algumas faixas com Δ e outras sem fica pior do que só os
+      // retratos.
+      var comDado = blocos.filter(function (b) { return b.est; });
+      var ilegiveis = comDado.filter(function (b) { return b.statFs < fx.fs * 0.4; });
+      var tiraTodos = ilegiveis.length * 2 >= comDado.length;
+      blocos.forEach(function (b) {
+        if (b.est && (tiraTodos || b.statFs < fx.fs * 0.4)) b.est = null;
+        if (!b.est) b.textoW = 0;
+        if (b.nomeFs < L.nome.fs * 0.45) b.nomeW = 0;
+        // extensão horizontal do bloco: é ela que a linha não pode cruzar
+        var ocupado = Math.max(b.foto ? b.foto.w : 0, b.est ? b.textoW : 0);
+        b.ocupa = [b.cx - ocupado / 2 - 6, b.cx + ocupado / 2 + 6];
+      });
+
+      // uma linha de base só para todas as faixas, ancorada na maior foto
+      var fotoMax = 0, temTexto = false;
+      blocos.forEach(function (b) {
+        fotoMax = Math.max(fotoMax, b.foto ? b.foto.h : 0);
+        temTexto = temTexto || !!b.est;
+      });
+      var baseTexto = L.y0 + fx.pad + fotoMax + (fotoMax ? fx.gap : fx.pad);
+      var alturaBloco = (temTexto ? baseTexto + statFs * 2.25 : L.y0 + fx.pad + fotoMax) + 10 - L.y0;
+      return {
+        L: L, pw: pw, ph: ph, X: X, Y: Y, blocos: blocos,
+        alturaBloco: alturaBloco, baseTexto: baseTexto, sw: sw, esc: esc
+      };
+    }
+
+    // Escolhe o maior retrato que caiba sem empurrar demais o eixo: para cada
+    // tamanho, calcula o topo de eixo necessário para a linha passar por baixo
+    // dos blocos e aceita o primeiro que não estique a escala além de 60%. Em
+    // série que só sobe (Ibovespa) esse é o preço de pôr as fotos em cima da
+    // linha; quando nem assim cabe, a foto encolhe.
+    var opcoes = { minFixo: s.minEixo };
+    var natural = escalaY(vals.concat(barras ? [0] : []), opcoes);
+    var escolhido = null;
+    [1, 0.85, 0.7, 0.55, 0.4].some(function (escalaFoto) {
+      var g = comEscala(natural, escalaFoto);
+      var pico = -Infinity;
+      g.blocos.forEach(function (b) {
+        pts.forEach(function (p) {
+          var x = g.X(p.i + 0.5);
+          if (x >= b.ocupa[0] && x <= b.ocupa[1] && p.v > pico) pico = p.v;
+        });
+      });
+      var altoMin = natural.max;
+      if (pico > -Infinity) {
+        var fracao = 1 - g.alturaBloco / g.ph;
+        altoMin = natural.min + (pico - natural.min) / Math.max(0.2, fracao);
+      }
+      var esc = escalaY(vals.concat(barras ? [0] : []), Object.assign({ altoMin: altoMin }, opcoes));
+      var esticou = (esc.max - esc.min) / (natural.max - natural.min);
+      if (esticou <= 1.6 || escalaFoto === 0.4) {
+        escolhido = comEscala(esc, escalaFoto);
+        return true;
+      }
+      return false;
+    });
+
+    var g = escolhido, L = g.L, X = g.X, Y = g.Y, esc = g.esc, ph = g.ph, pw = g.pw;
     var svg = el("svg", {
       xmlns: NS, viewBox: "0 0 " + L.W + " " + L.H, width: L.W, height: L.H,
-      role: "img", "aria-label": s.titulo + " — " + s.subtitulo + ", com o fundo por governo"
+      role: "img", "aria-label": s.titulo + " — " + s.subtitulo + ", por governo"
     });
+    var desenhos = [];   // imagens: fora do SVG na hora de exportar PNG
 
-    // faixas de governo
-    var faixas = [];
-    mandatos.forEach(function (m) {
-      var a = Math.max(idxMes(m.inicio), d0), b = Math.min(idxMes(m.fim) + 1, d1);
-      if (b <= a) return;
-      faixas.push({ m: m, a: a, b: b });
+    // faixas dos mandatos
+    g.blocos.forEach(function (b) {
       svg.appendChild(el("rect", {
-        x: X(a), y: L.y0, width: X(b) - X(a), height: ph, fill: m.cor, "fill-opacity": pal.faixaOp
+        x: b.x0, y: L.y0, width: b.largura, height: ph, fill: b.m.cor, "fill-opacity": pal.faixaOp
       }));
     });
 
@@ -187,14 +330,14 @@
         x1: L.x0, x2: L.x1, y1: y, y2: y, stroke: ehZero ? pal.zero : pal.grade, "stroke-width": ehZero ? 2 : 1.5
       }));
       var rot = fmtTick(s, t, esc.passo);
-      var at = { "font-size": L.tick, fill: pal.suave, "dominant-baseline": "central", y: y };
+      var at = { "font-size": L.tick, fill: pal.eixo, "dominant-baseline": "central", y: y };
       svg.appendChild(texto(rot, Object.assign({ x: L.x0 - 16, "text-anchor": "end" }, at)));
       if (L.eixoDuplo && Math.abs(y - seloY) > seloH / 2 + L.tick * 0.5) {
         svg.appendChild(texto(rot, Object.assign({ x: L.x1 + 16, "text-anchor": "start" }, at)));
       }
     });
 
-    // rótulos do eixo X (rotacionados, alinhados por múltiplos de N meses)
+    // rótulos do eixo X (rotacionados, em múltiplos de N meses)
     var pxMes = pw / (d1 - d0), passoX = 1;
     [1, 2, 3, 4, 6, 12, 24, 36, 60].some(function (n) { passoX = n; return pxMes * n >= L.xlab * 1.3; });
     for (var i = d0; i < d1; i++) {
@@ -202,39 +345,43 @@
       var cx = X(i + 0.5);
       svg.appendChild(el("line", { x1: cx, x2: cx, y1: L.y1, y2: L.y1 + 8, stroke: pal.zero, "stroke-width": 1.5 }));
       svg.appendChild(texto(rotuloMesCurto(i), {
-        x: cx, y: L.y1 + 18, "font-size": L.xlab, fill: pal.suave, "text-anchor": "end",
+        x: cx, y: L.y1 + 18, "font-size": L.xlab, fill: pal.eixo, "text-anchor": "end",
         "dominant-baseline": "central", transform: "rotate(-90 " + cx + " " + (L.y1 + 18) + ")"
       }));
     }
 
-    // nomes dos governos no topo de cada faixa
-    faixas.forEach(function (f) {
-      var w = X(f.b) - X(f.a);
-      var cor = nomeTema === "dark" ? f.m.cor : sombrear(f.m.cor, pal.faixaTexto);
-      var cx = (X(f.a) + X(f.b)) / 2;
-      if (L.faixaVertical) {
-        // layout estreito: nome girado, cabe em faixas finas
-        if (w < L.faixa * 1.25) return;
-        svg.appendChild(texto(f.m.nome, {
-          x: cx, y: L.y0 + 14, "font-size": L.faixa, "font-weight": "bold", fill: cor, "text-anchor": "end",
-          "dominant-baseline": "central", transform: "rotate(-90 " + cx + " " + (L.y0 + 14) + ")"
+    // nome do mandato (acima do gráfico), retrato e números do período
+    g.blocos.forEach(function (b) {
+      if (b.nomeW) {
+        svg.appendChild(texto(b.m.nome, {
+          x: b.cx, y: L.nome.y, "font-size": b.nomeFs, "font-weight": "bold",
+          fill: pal.faixaNome, "text-anchor": "middle"
         }));
-        return;
       }
-      if (w < largura(f.m.nome, L.faixa, "bold") + 14) return;
-      svg.appendChild(texto(f.m.nome, {
-        x: cx, y: L.y0 + L.faixa + 8, "font-size": L.faixa, "font-weight": "bold",
-        fill: cor, "text-anchor": "middle"
-      }));
+      if (b.foto) {
+        desenhos.push({
+          src: b.foto.src, x: b.cx - b.foto.w / 2, y: L.y0 + fx.pad, w: b.foto.w, h: b.foto.h
+        });
+      }
+      if (b.est) {
+        [b.est.delta, b.est.media].forEach(function (linha, k) {
+          svg.appendChild(texto(linha, {
+            x: b.cx, y: g.baseTexto + b.statFs * (0.85 + k * 1.25), "font-size": b.statFs,
+            "font-weight": "bold", fill: pal.faixaNome, "text-anchor": "middle"
+          }));
+        });
+      }
     });
 
     // série
     if (barras) {
-      var bw = Math.max(1.5, pxMes * 0.7), y0v = Y(Math.max(esc.min, 0));
+      var bw = Math.max(1.5, pxMes * 0.7), yBase = Y(Math.max(esc.min, 0));
       pts.forEach(function (p) {
         if (!p.v) return;
         var yy = Y(p.v);
-        svg.appendChild(el("rect", { x: X(p.i + 0.5) - bw / 2, y: yy, width: bw, height: Math.max(2, y0v - yy), fill: pal.linha }));
+        svg.appendChild(el("rect", {
+          x: X(p.i + 0.5) - bw / 2, y: yy, width: bw, height: Math.max(2, yBase - yy), fill: pal.linha
+        }));
       });
     } else {
       var d = "", ant = null;
@@ -249,55 +396,42 @@
     }
 
     // selo com o último valor
-    var bx = L.W - 26 - sw;
+    var bx = L.W - 26 - g.sw;
     var px = X(ult.i + 0.5), py = Y(ult.v);
     if (px + 6 < bx) {
       svg.appendChild(el("line", { x1: px, y1: py, x2: bx, y2: seloY, stroke: pal.suave, "stroke-width": 1.5 }));
     }
     if (!barras) svg.appendChild(el("circle", { cx: px, cy: py, r: 8, fill: pal.linha, stroke: pal.bg, "stroke-width": 3 }));
-    svg.appendChild(el("rect", { x: bx, y: seloY - seloH / 2, width: sw, height: seloH, rx: 5, fill: pal.selo }));
+    svg.appendChild(el("rect", { x: bx, y: seloY - seloH / 2, width: g.sw, height: seloH, rx: 5, fill: pal.selo }));
     svg.appendChild(texto(rotSelo, {
-      x: bx + sw / 2, y: seloY, "font-size": L.selo, "font-weight": "bold", fill: pal.seloTexto,
+      x: bx + g.sw / 2, y: seloY, "font-size": L.selo, "font-weight": "bold", fill: pal.seloTexto,
       "text-anchor": "middle", "dominant-baseline": "central"
     }));
 
-    // título, subtítulo, legenda e fonte
-    var tfs = Math.min(L.titulo.fs, L.tituloMax / largura(s.titulo, 100, "bold") * 100);
+    // título, subtítulo e fonte
     svg.appendChild(texto(s.titulo, {
-      x: L.titulo.x, y: L.titulo.y, "font-size": tfs, "font-weight": "bold", fill: pal.texto
+      x: L.titulo.x, y: L.titulo.y, "font-weight": "bold", fill: pal.texto,
+      "font-size": corpoQueCabe(s.titulo, L.titulo.fs, L.tituloMax, "bold")
     }));
     svg.appendChild(texto(s.subtitulo, { x: L.sub.x, y: L.sub.y, "font-size": L.sub.fs, fill: pal.suave }));
-
-    var rotLeg = s.titulo + " (" + s.subtitulo.replace(/^Var\. /, "") + ")";
-    var lfs = Math.min(L.legenda.fs, (L.W - 60 - 76) / largura(rotLeg, 100) * 100);
-    var lw = largura(rotLeg, lfs) + 76;
-    var lx = (L.W - lw) / 2;
-    if (barras) {
-      svg.appendChild(el("rect", { x: lx, y: L.legenda.y - 9, width: 52, height: 18, fill: pal.linha }));
-    } else {
-      svg.appendChild(el("line", {
-        x1: lx, x2: lx + 52, y1: L.legenda.y, y2: L.legenda.y, stroke: pal.linha, "stroke-width": 8, "stroke-linecap": "round"
-      }));
-    }
-    svg.appendChild(texto(rotLeg, {
-      x: lx + 68, y: L.legenda.y, "font-size": lfs, fill: pal.texto, "dominant-baseline": "central"
-    }));
     svg.appendChild(texto("Fonte: " + meta.fonte + ".", {
       x: L.fonte.x, y: L.fonte.y, "font-size": L.fonte.fs, fill: pal.suave, "text-anchor": "end"
     }));
 
+    desenhos.push({ src: pal.logo, x: L.logo.x, y: L.logo.y, w: L.logo.w, h: L.logo.w * LOGO_RAZAO });
+
     return {
-      svg: svg, L: L, pal: pal, X: X, Y: Y, d0: d0, d1: d1, pts: pts, faixas: faixas,
+      svg: svg, L: L, pal: pal, X: X, Y: Y, d0: d0, d1: d1, pts: pts, blocos: g.blocos,
+      alturaBloco: g.alturaBloco, desenhos: desenhos,
       porIdx: pts.reduce(function (o, p) { o[p.i] = p; return o; }, {})
     };
   }
 
-  // logo à parte: fica fora do SVG exportado (o PNG o desenha no canvas)
-  function logoNoSvg(g) {
-    var lw = g.L.logo.w;
-    g.svg.appendChild(el("image", {
-      href: g.pal.logo, x: g.L.logo.x, y: g.L.logo.y, width: lw, height: lw * LOGO_RAZAO, "class": "logo-svg"
-    }));
+  // na tela as imagens entram como <image href>; no PNG elas vão para o canvas
+  function imagensNoSvg(g) {
+    g.desenhos.forEach(function (im) {
+      g.svg.appendChild(el("image", { href: im.src, x: im.x, y: im.y, width: im.w, height: im.h }));
+    });
   }
 
   // ---------- interação: passar o mouse ----------
@@ -326,18 +460,22 @@
       camada.appendChild(el("line", {
         x1: x, x2: x, y1: L.y0, y2: L.y1, stroke: pal.suave, "stroke-width": 1.5, "stroke-dasharray": "6 6"
       }));
-      camada.appendChild(el("circle", { cx: x, cy: y, r: 9, fill: pal.linha, stroke: pal.texto, "stroke-width": 3 }));
+      camada.appendChild(el("circle", { cx: x, cy: y, r: 9, fill: pal.linha, stroke: pal.bg, "stroke-width": 3 }));
 
       var gov = null;
-      g.faixas.forEach(function (f) { if (ponto.i >= f.a && ponto.i < f.b) gov = f.m; });
+      g.blocos.forEach(function (b) { if (ponto.i >= b.a && ponto.i < b.b) gov = b.m; });
       var linhas = [rotuloMesLongo(ponto.i), fmtValor(cartao.serie, ponto.v)];
       if (gov) linhas.push(gov.nome);
       var fs = L.tip, pad = fs * 0.6;
-      var w = Math.max.apply(null, linhas.map(function (t, k) { return largura(t, fs, k === 1 ? "bold" : "normal"); })) + pad * 2 + (gov ? fs * 0.7 : 0);
+      var w = Math.max.apply(null, linhas.map(function (t, k) {
+        return largura(t, fs, k === 1 ? "bold" : "normal");
+      })) + pad * 2 + (gov ? fs * 0.7 : 0);
       var h = linhas.length * fs * 1.35 + pad * 1.2;
       var bx = x + 24; if (bx + w > L.x1 + 40) bx = x - 24 - w;
-      var by = L.y0 + 56;
-      camada.appendChild(el("rect", { x: bx, y: by, width: w, height: h, rx: 8, fill: pal.tipBg, stroke: pal.tipBorda, "stroke-width": 1.5 }));
+      var by = Math.min(L.y0 + g.alturaBloco + 16, L.y1 - h - 16);
+      camada.appendChild(el("rect", {
+        x: bx, y: by, width: w, height: h, rx: 8, fill: pal.tipBg, stroke: pal.tipBorda, "stroke-width": 1.5
+      }));
       linhas.forEach(function (t, k) {
         var ty = by + pad * 0.6 + fs * 0.68 + k * fs * 1.35;
         var ehGov = gov && k === 2;
@@ -363,14 +501,13 @@
     return lista;
   }
   function inicioDoPeriodo(s, id) {
-    var ultimo = idxMes(s.dados[s.dados.length - 1][0]);
     if (id === "tudo") return null;
     if (id === "padrao") return idxMes(s.inicioPadrao);
-    return ultimo - (+id) * 12 + 1;
+    return idxMes(s.dados[s.dados.length - 1][0]) - (+id) * 12 + 1;
   }
 
   function criarCartao(s) {
-    var cartao = { serie: s, periodo: s.inicioPadrao ? "padrao" : "tudo", inicioIdx: null, layoutAtual: null };
+    var cartao = { serie: s, periodo: s.inicioPadrao ? "padrao" : "tudo", inicioIdx: null, chave: null };
     var vazio = !s.dados.length;
     if (!vazio) cartao.inicioIdx = inicioDoPeriodo(s, cartao.periodo);
 
@@ -382,7 +519,9 @@
     if (!vazio) {
       var grupo = html("div", { "class": "periodos", role: "group", "aria-label": "Período de " + s.titulo });
       periodosDisponiveis(s).forEach(function (p) {
-        var b = html("button", { type: "button", texto: p.rot, "data-p": p.id, "aria-pressed": String(p.id === cartao.periodo) });
+        var b = html("button", {
+          type: "button", texto: p.rot, "data-p": p.id, "aria-pressed": String(p.id === cartao.periodo)
+        });
         b.addEventListener("click", function () {
           cartao.periodo = p.id;
           cartao.inicioIdx = inicioDoPeriodo(s, p.id);
@@ -395,8 +534,6 @@
       });
       ferramentas.appendChild(grupo);
       ferramentas.appendChild(menuBaixar(cartao));
-    } else {
-      ferramentas.appendChild(html("span", { "class": "sr-only", texto: "Sem dados" }));
     }
     raiz.appendChild(ferramentas);
     raiz.appendChild(frame);
@@ -414,19 +551,15 @@
     return cartao;
   }
 
-  function escolherLayout(cartao) {
-    return cartao.frame.clientWidth < 700 || window.innerWidth < 700 ? "narrow" : "wide";
-  }
-
   function desenhar(cartao, forcar) {
     if (!cartao.serie.dados.length) return;
-    var nomeLayout = escolherLayout(cartao);
-    var chave = nomeLayout + "|" + tema();
+    var nomeLayout = cartao.frame.clientWidth < 700 || window.innerWidth < 700 ? "narrow" : "wide";
+    var chave = nomeLayout + "|" + tema() + "|" + cartao.periodo;
     if (!forcar && cartao.chave === chave) return;
     cartao.chave = chave;
     var L = LAYOUTS[nomeLayout];
     var g = construir(cartao, L, tema());
-    logoNoSvg(g);
+    imagensNoSvg(g);
     ligarHover(cartao, g);
     cartao.frame.style.aspectRatio = L.W + " / " + L.H;
     cartao.frame.innerHTML = "";
@@ -441,13 +574,13 @@
       'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg><span>Baixar</span>';
     var menu = html("div", { "class": "menu", role: "menu", hidden: "" });
     [
-      ["png", "Imagem (PNG)", "1920×1080, no tema atual", baixarPNG],
-      ["svg", "Vetor (SVG)", "editável no Illustrator/Figma", baixarSVG],
-      ["csv", "Dados (CSV)", "mês e valor, para o Excel", baixarCSV]
+      ["Imagem (PNG)", "1920×1080, no tema atual", baixarPNG],
+      ["Vetor (SVG)", "editável no Illustrator/Figma", baixarSVG],
+      ["Dados (CSV)", "mês e valor, para o Excel", baixarCSV]
     ].forEach(function (it) {
       var b = html("button", { type: "button", role: "menuitem" });
-      b.innerHTML = it[1] + "<small>" + it[2] + "</small>";
-      b.addEventListener("click", function () { fechar(); it[3](cartao); });
+      b.innerHTML = it[0] + "<small>" + it[1] + "</small>";
+      b.addEventListener("click", function () { fechar(); it[2](cartao); });
       menu.appendChild(b);
     });
     function fechar() { menu.hidden = true; botao.setAttribute("aria-expanded", "false"); }
@@ -459,7 +592,7 @@
       botao.setAttribute("aria-expanded", String(abrir));
     });
     document.addEventListener("click", function (e) { if (!caixa.contains(e.target)) fechar(); });
-    document.addEventListener("keydown", function (e) { if (e.key === "Escape") { fechar(); } });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape") fechar(); });
     caixa.appendChild(botao);
     caixa.appendChild(menu);
     return caixa;
@@ -477,29 +610,33 @@
     return new Promise(function (ok, erro) {
       var im = new Image();
       im.onload = function () { ok(im); };
-      im.onerror = function () { erro(new Error("Não carregou " + src.slice(0, 60))); };
+      im.onerror = function () { erro(new Error("não carregou " + src.slice(0, 60))); };
       im.src = src;
     });
   }
   function serializar(svg) { return new XMLSerializer().serializeToString(svg); }
+  function comoDataURL(im) {
+    var c = document.createElement("canvas");
+    c.width = im.naturalWidth; c.height = im.naturalHeight;
+    c.getContext("2d").drawImage(im, 0, 0);
+    return c.toDataURL(/\.png$/i.test(im.src) ? "image/png" : "image/jpeg", 0.92);
+  }
 
   function baixarPNG(cartao) {
     var nomeTema = tema(), L = LAYOUTS.wide;
     var g = construir(cartao, L, nomeTema);
     var xml = serializar(g.svg);
-    var pedidos = [
+    Promise.all([
       carregarImagem("data:image/svg+xml;charset=utf-8," + encodeURIComponent(xml)),
-      carregarImagem(g.pal.logo),
       nomeTema === "dark" ? carregarImagem("assets/fundo.jpg") : Promise.resolve(null)
-    ];
-    Promise.all(pedidos).then(function (r) {
+    ].concat(g.desenhos.map(function (im) { return carregarImagem(im.src); }))).then(function (r) {
       var c = document.createElement("canvas");
       c.width = L.W; c.height = L.H;
       var x = c.getContext("2d");
       x.fillStyle = g.pal.bg; x.fillRect(0, 0, L.W, L.H);
-      if (r[2]) x.drawImage(r[2], 0, 0, L.W, L.H);
+      if (r[1]) x.drawImage(r[1], 0, 0, L.W, L.H);
       x.drawImage(r[0], 0, 0, L.W, L.H);
-      x.drawImage(r[1], L.logo.x, L.logo.y, L.logo.w, L.logo.w * LOGO_RAZAO);
+      g.desenhos.forEach(function (im, k) { x.drawImage(r[k + 2], im.x, im.y, im.w, im.h); });
       c.toBlob(function (b) { salvar(b, nomeArquivo(cartao, "png")); }, "image/png");
     }).catch(function (e) { alert("Não consegui gerar o PNG: " + e.message); });
   }
@@ -507,24 +644,23 @@
   function baixarSVG(cartao) {
     var nomeTema = tema(), L = LAYOUTS.wide;
     var g = construir(cartao, L, nomeTema);
-    carregarImagem(g.pal.logo).then(function (im) {
-      var c = document.createElement("canvas");
-      c.width = im.naturalWidth; c.height = im.naturalHeight;
-      c.getContext("2d").drawImage(im, 0, 0);
+    Promise.all(g.desenhos.map(function (im) { return carregarImagem(im.src); })).then(function (r) {
       g.svg.insertBefore(el("rect", { x: 0, y: 0, width: L.W, height: L.H, fill: g.pal.bg }), g.svg.firstChild);
-      g.svg.appendChild(el("image", {
-        href: c.toDataURL("image/png"), x: L.logo.x, y: L.logo.y, width: L.logo.w, height: L.logo.w * LOGO_RAZAO
-      }));
+      g.desenhos.forEach(function (im, k) {
+        g.svg.appendChild(el("image", { href: comoDataURL(r[k]), x: im.x, y: im.y, width: im.w, height: im.h }));
+      });
       salvar(new Blob([serializar(g.svg)], { type: "image/svg+xml" }), nomeArquivo(cartao, "svg"));
     }).catch(function (e) { alert("Não consegui gerar o SVG: " + e.message); });
   }
 
   function baixarCSV(cartao) {
     var s = cartao.serie, pct = s.formato === "pct";
-    var linhas = ["mes;" + s.titulo.replace(/;/g, ",") + " (" + s.subtitulo.replace(/;/g, ",") + ")"];
+    var linhas = ["mes;" + s.titulo.replace(/;/g, ",") + " (" + s.subtitulo.replace(/;/g, ",") + ");governo"];
     s.dados.forEach(function (d) {
+      var i = idxMes(d[0]), gov = "";
+      mandatos.forEach(function (m) { if (i >= idxMes(m.inicio) && i <= idxMes(m.fim)) gov = m.nome; });
       var v = pct ? d[1] * 100 : d[1];
-      linhas.push(d[0] + ";" + String(Math.round(v * 1e6) / 1e6).replace(".", ","));
+      linhas.push(d[0] + ";" + String(Math.round(v * 1e6) / 1e6).replace(".", ",") + ";" + gov);
     });
     salvar(new Blob(["﻿" + linhas.join("\r\n")], { type: "text/csv;charset=utf-8" }), nomeArquivo(cartao, "csv"));
   }
@@ -550,9 +686,16 @@
     Promise.all([pegarJSON("dados/indicadores.json"), pegarJSON("dados/mandatos.json")]).then(function (r) {
       meta = { fonte: r[0].fonte, atualizado: r[0].atualizado };
       mandatos = r[1].mandatos;
+      // os retratos precisam estar carregados antes do primeiro desenho: é deles
+      // que sai a proporção usada para reservar espaço no topo do gráfico
+      var fotos = mandatos.map(function (m) { return m.foto; }).filter(Boolean);
+      return Promise.all(fotos.map(function (src) {
+        return carregarImagem(src).then(function (im) { imagens[src] = im; }, function () {});
+      })).then(function () { return r[0].series; });
+    }).then(function (series) {
       host.innerHTML = "";
       var chips = document.getElementById("chips");
-      r[0].series.forEach(function (s) {
+      series.forEach(function (s) {
         var c = criarCartao(s);
         cartoes.push(c);
         host.appendChild(c.raiz);
