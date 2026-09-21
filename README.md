@@ -13,6 +13,8 @@ variação e a média do período. Site estático, sem build: `index.html` +
 - **Período** — Tudo / 20 / 10 / 5 anos. O IPCA abre em 1996 porque o valor de
   jan/1995 (631%) achata todo o resto; "Tudo" mostra desde 1995.
 - Passe o mouse (ou toque) no gráfico para ver o valor do mês e o governo.
+- O eixo X marca sempre janeiro, de ano em ano (de 2 em 2 na tela do celular,
+  onde um ano não comporta o rótulo).
 - Na largura de celular o gráfico vira retrato e mostra só as fotos e os nomes:
   os números do mandato não cabem em faixa estreita sem virar borrão.
 
@@ -49,6 +51,12 @@ Calculados na hora de desenhar, sobre os meses **visíveis** da faixa (com
 | `"pct"` | variação % do primeiro ao último mês | Ibovespa, Ibovespa em dólar, IED |
 | `"abs"` | diferença do primeiro ao último mês — em p.p. quando a série já é % | Selic, IPCA, Dólar, Primário, Endividamento |
 | `"soma"` | `Total:` do período, e a média vira por mês | IPOs (contagem) |
+
+O Δ sai **verde quando positivo e vermelho quando negativo** (`Total:` dos IPOs
+fica neutro — não é variação). Nome, Δ e média usam **o mesmo corpo de fonte em
+todas as faixas**: o maior que caiba sem dois rótulos vizinhos se encostarem —
+por isso um mandato curto não ganha letra menor, e sim todos ficam do tamanho
+que ele permite.
 
 `minEixo` trava o piso do eixo Y (o Endividamento começa em 10%).
 

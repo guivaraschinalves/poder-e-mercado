@@ -21,13 +21,13 @@
     dark: {
       texto: "#ffffff", eixo: "#ffffff", suave: "rgba(255,255,255,.8)", grade: "rgba(255,255,255,.14)",
       zero: "rgba(255,255,255,.55)", linha: "#ffffff", selo: "#4a7bc4", seloTexto: "#ffffff",
-      faixaOp: 0.88, faixaNome: "#ffffff", bg: "#04100f",
+      faixaOp: 0.88, faixaNome: "#ffffff", alta: "#5fdc82", baixa: "#ff8a8a", bg: "#04100f",
       tipBg: "rgba(4,16,15,.94)", tipBorda: "rgba(255,255,255,.35)", logo: "assets/logo.png"
     },
     light: {
       texto: "#14202b", eixo: "#26313b", suave: "#5a6772", grade: "#dde3e7",
       zero: "#8a96a0", linha: "#1d3f79", selo: "#2f5fae", seloTexto: "#ffffff",
-      faixaOp: 0.24, faixaNome: "#26313b", bg: "#ffffff",
+      faixaOp: 0.24, faixaNome: "#26313b", alta: "#0f7a37", baixa: "#c02a2a", bg: "#ffffff",
       tipBg: "rgba(255,255,255,.96)", tipBorda: "#b9c3ca", logo: "assets/logo-claro.png"
     }
   };
@@ -128,8 +128,10 @@
     var delta;
     if (tipo === "soma") {
       // contagem: a média por mês só diz algo com uma casa decimal
-      return { delta: "Total: " + nf(0).format(soma), media: "Média: " + nf(1).format(media) + "/mês" };
+      // contagem não tem variação: "Total" fica neutro, sem cor
+      return { delta: "Total: " + nf(0).format(soma), media: "Média: " + nf(1).format(media) + "/mês", sinal: 0 };
     }
+    var sinal = Math.sign(ult - prim);
     if (tipo === "pct") {
       delta = prim ? "Δ: " + comSinal((ult / prim - 1) * 100, 1) + "%" : "Δ: —";
     } else if (s.formato === "pct") {
@@ -137,7 +139,7 @@
     } else {
       delta = "Δ: " + (s.prefixo || "") + comSinal(ult - prim, s.casas) + (s.sufixo || "");
     }
-    return { delta: delta, media: "Média: " + fmtValor(s, media) };
+    return { delta: delta, media: "Média: " + fmtValor(s, media), sinal: sinal };
   }
 
   // ---------- escala Y ----------
@@ -208,16 +210,10 @@
         // faixa: deixa o rótulo invadir um pouco a faixa vizinha — o texto dela
         // é centralizado e fica longe. A checagem de colisão logo abaixo cuida
         // do caso em que duas faixas estreitas ficam lado a lado.
-        var cabe = Math.max(bw - 10, Math.min(bw * 2.4, 210));
-        bloco.nomeFs = corpoQueCabe(m.nome, L.nome.fs, cabe, "bold");
-        bloco.nomeW = largura(m.nome, bloco.nomeFs, "bold");
+        bloco.nome100 = largura(m.nome, 100, "bold");
         if (dentro.length) {
-          var est = estatisticas(s, dentro.map(function (p) { return p.v; }));
-          var fsCabe = Math.min(statFs, corpoQueCabe(est.delta, statFs, cabe, "bold"),
-            corpoQueCabe(est.media, statFs, cabe, "bold"));
-          bloco.est = est;
-          bloco.statFs = fsCabe;
-          bloco.textoW = Math.max(largura(est.delta, fsCabe, "bold"), largura(est.media, fsCabe, "bold"));
+          bloco.est = estatisticas(s, dentro.map(function (p) { return p.v; }));
+          bloco.texto100 = Math.max(largura(bloco.est.delta, 100, "bold"), largura(bloco.est.media, 100, "bold"));
         }
         var im = imagens[m.foto];
         if (im && fotoH > 40) {
@@ -230,34 +226,34 @@
         blocos.push(bloco);
       });
 
-      // rótulos de faixas vizinhas não podem se encostar
-      for (var k = 0; k + 1 < blocos.length; k++) {
-        var A = blocos[k], B = blocos[k + 1];
-        var folga = B.cx - A.cx - 16;
-        ["nome", "texto"].forEach(function (campo) {
-          var wa = A[campo + "W"] || 0, wb = B[campo + "W"] || 0;
-          if (wa / 2 + wb / 2 <= folga) return;
-          var fator = folga / (wa / 2 + wb / 2);
-          [A, B].forEach(function (z) {
-            if (!z[campo + "W"]) return;
-            z[campo + "W"] *= fator;
-            if (campo === "nome") z.nomeFs *= fator; else z.statFs *= fator;
-          });
+      /* Um corpo de fonte só para todas as faixas — mandato curto não ganha
+       * letra menor que o dos outros. Procura o maior corpo em que nenhum par
+       * de rótulos vizinhos se encosta e nada escapa da imagem; um rótulo pode
+       * transbordar da própria faixa, já que o do vizinho é centralizado e fica
+       * longe. Como o corpo é o mesmo em todas, ou os números aparecem em todas
+       * ou em nenhuma (é o que acontece na versão estreita, de celular). */
+      function corpoUniforme(campo, fsMax) {
+        var usados = blocos.filter(function (b) { return b[campo]; });
+        var fs = fsMax;
+        usados.forEach(function (b, k) {
+          fs = Math.min(fs, (b.cx - 8) * 200 / b[campo], (L.W - 8 - b.cx) * 200 / b[campo]);
+          var prox = usados[k + 1];
+          if (prox) fs = Math.min(fs, (prox.cx - b.cx - 16) * 200 / (b[campo] + prox[campo]));
         });
+        return fs;
       }
-      // Abaixo desse corpo o número vira borrão; se isso acontecer em metade
-      // ou mais das faixas (é o caso da versão estreita, de celular), tira de
-      // todas — algumas faixas com Δ e outras sem fica pior do que só os
-      // retratos.
-      var comDado = blocos.filter(function (b) { return b.est; });
-      var ilegiveis = comDado.filter(function (b) { return b.statFs < fx.fs * 0.4; });
-      var tiraTodos = ilegiveis.length * 2 >= comDado.length;
+      var nomeFs = corpoUniforme("nome100", L.nome.fs);
+      var textoFs = Math.min(statFs, corpoUniforme("texto100", fx.fs));
+      var mostraNumeros = textoFs >= fx.fs * 0.4;
+      statFs = textoFs;
       blocos.forEach(function (b) {
-        if (b.est && (tiraTodos || b.statFs < fx.fs * 0.4)) b.est = null;
-        if (!b.est) b.textoW = 0;
-        if (b.nomeFs < L.nome.fs * 0.45) b.nomeW = 0;
+        b.nomeFs = nomeFs;
+        b.nomeW = nomeFs >= L.nome.fs * 0.4 ? b.nome100 * nomeFs / 100 : 0;
+        b.statFs = textoFs;
+        if (!mostraNumeros) b.est = null;
+        b.textoW = b.est ? b.texto100 * textoFs / 100 : 0;
         // extensão horizontal do bloco: é ela que a linha não pode cruzar
-        var ocupado = Math.max(b.foto ? b.foto.w : 0, b.est ? b.textoW : 0);
+        var ocupado = Math.max(b.foto ? b.foto.w : 0, b.textoW);
         b.ocupa = [b.cx - ocupado / 2 - 6, b.cx + ocupado / 2 + 6];
       });
 
@@ -337,9 +333,12 @@
       }
     });
 
-    // rótulos do eixo X (rotacionados, em múltiplos de N meses)
-    var pxMes = pw / (d1 - d0), passoX = 1;
-    [1, 2, 3, 4, 6, 12, 24, 36, 60].some(function (n) { passoX = n; return pxMes * n >= L.xlab * 1.3; });
+    // Eixo X sempre em anos cheios, marcando janeiro. Se um ano de largura não
+    // comporta o rótulo (acontece na versão estreita, de celular), pula de 2 em
+    // 2 anos — nunca meio ano, para o eixo não trocar de passo entre um período
+    // e outro.
+    var pxMes = pw / (d1 - d0), passoX = 12;
+    while (pxMes * passoX < L.xlab * 1.15) passoX += 12;
     for (var i = d0; i < d1; i++) {
       if (i % passoX !== 0) continue;
       var cx = X(i + 0.5);
@@ -364,10 +363,11 @@
         });
       }
       if (b.est) {
-        [b.est.delta, b.est.media].forEach(function (linha, k) {
-          svg.appendChild(texto(linha, {
+        var corDelta = b.est.sinal > 0 ? pal.alta : b.est.sinal < 0 ? pal.baixa : pal.faixaNome;
+        [[b.est.delta, corDelta], [b.est.media, pal.faixaNome]].forEach(function (linha, k) {
+          svg.appendChild(texto(linha[0], {
             x: b.cx, y: g.baseTexto + b.statFs * (0.85 + k * 1.25), "font-size": b.statFs,
-            "font-weight": "bold", fill: pal.faixaNome, "text-anchor": "middle"
+            "font-weight": "bold", fill: linha[1], "text-anchor": "middle"
           }));
         });
       }
