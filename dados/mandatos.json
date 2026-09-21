@@ -1,0 +1,53 @@
+{
+ "mandatos": [
+  {
+   "id": "fhc",
+   "nome": "FHC",
+   "cor": "#0fa3b1",
+   "inicio": "1995-01",
+   "fim": "2002-12"
+  },
+  {
+   "id": "lula1",
+   "nome": "Lula I",
+   "cor": "#f2b134",
+   "inicio": "2003-01",
+   "fim": "2006-12"
+  },
+  {
+   "id": "lula2",
+   "nome": "Lula II",
+   "cor": "#e4572e",
+   "inicio": "2007-01",
+   "fim": "2010-12"
+  },
+  {
+   "id": "dilma",
+   "nome": "Dilma",
+   "cor": "#9b5de5",
+   "inicio": "2011-01",
+   "fim": "2016-07"
+  },
+  {
+   "id": "temer",
+   "nome": "Temer",
+   "cor": "#8d99ae",
+   "inicio": "2016-08",
+   "fim": "2018-12"
+  },
+  {
+   "id": "bolsonaro",
+   "nome": "Bolsonaro",
+   "cor": "#43aa8b",
+   "inicio": "2019-01",
+   "fim": "2022-12"
+  },
+  {
+   "id": "lula3",
+   "nome": "Lula III",
+   "cor": "#f15bb5",
+   "inicio": "2023-01",
+   "fim": "2026-12"
+  }
+ ]
+}
