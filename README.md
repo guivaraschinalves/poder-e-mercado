@@ -80,6 +80,23 @@ unidade são **suposições** a confirmar contra o Excel:
   o indicador define a sua: Ibovespa e IPOs "B3 e Liberta", Ibovespa em dólar
   "B3, BCB e Liberta" (campo `fonte` em `INDICADORES`).
 
+### Comparação entre mandatos (Dívida Bruta)
+
+A Dívida Bruta não é uma série no tempo como as outras: vem da **última tabela
+da aba "Dívida Bruta"** do Excel (a que está em p.p.), lida por `le_comparacao`.
+Cada mandato vira uma linha, com o eixo X em meses desde a posse e o valor em
+p.p. do PIB acumulados desde o mês anterior à posse (mês 0 = zero).
+
+As contas são as da planilha: dívida bruta do governo geral (SGS 4502) dividida
+pelo PIB de 12 meses (SGS 4382), e a diferença contra dezembro anterior. As
+datas de mandato vêm da própria tabela — nela, Dilma II vai até abr/2016 e Temer
+começa em mai/2016 (as faixas dos outros gráficos usam ago/2016, a posse
+definitiva).
+
+Para trocar o gráfico por outra tabela nesse formato, aponte `aba` no
+`INDICADORES` para a aba desejada: a função procura o rótulo "Início do
+mandato" mais à direita e lê a tabela que estiver depois dele.
+
 ### Governos
 
 `GOVERNOS` no mesmo script agrupa os mandatos da aba *Presidentes*: mandatos

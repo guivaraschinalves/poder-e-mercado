@@ -48,8 +48,10 @@ INDICADORES = [
                            tipo="linha", variacao="abs")),
     ("H", "divida-liquida", dict(titulo="Dívida Líquida", subtitulo="% do PIB", formato="pct", casas=2,
                                  tipo="linha", variacao="abs")),
-    ("I", "divida-bruta", dict(titulo="Dívida Bruta", subtitulo="% do PIB", formato="pct", casas=2,
-                               tipo="linha", variacao="abs")),
+    # comparação entre mandatos: vem da última tabela da aba "Dívida Bruta" (em p.p.)
+    ("I", "divida-bruta", dict(titulo="Dívida Bruta do Governo Geral",
+                               subtitulo="Variação desde o início do mandato, em p.p. do PIB",
+                               formato="pp", casas=1, tipo="comparacao", aba="Dívida Bruta")),
     ("J", "ied", dict(titulo="Investimento Estrangeiro Direto", subtitulo="US$ milhões", formato="num", casas=0,
                       prefixo="US$ ", sufixo=" mi", tipo="linha", variacao="pct")),
     ("K", "familias", dict(titulo="Endividamento das Famílias", subtitulo="Exc. crédito habitacional", formato="pct",
@@ -108,6 +110,33 @@ def le_planilhas(caminho):
     return abas
 
 
+def col_num(col):
+    n = 0
+    for ch in col:
+        n = n * 26 + ord(ch) - 64
+    return n
+
+
+def le_comparacao(aba):
+    """Tabela "mês do mandato × mandato": a última da aba, à direita do rótulo
+    "Início do mandato". Linha 1 = nome do mandato; linhas 2, 3, … = mês 1, 2, …
+    do mandato; as linhas "Início do mandato" e "Fim do mandato" dão as datas."""
+    rotulos = [(c, r) for (c, r), v in aba.items() if v == "Início do mandato"]
+    c0, r_ini = max(rotulos, key=lambda k: col_num(k[0]))
+    colunas = sorted({c for (c, r) in aba if r == 1 and col_num(c) > col_num(c0)}, key=col_num)
+    saida = []
+    for c in colunas:
+        valores = []
+        for r in range(2, r_ini):
+            v = aba.get((c, r))
+            if not eh_numero(v):
+                break
+            valores.append(round(float(v), 4))
+        saida.append(dict(nome=aba[(c, 1)].strip(), inicio=serial_para_mes(aba[(c, r_ini)]),
+                          fim=serial_para_mes(aba[(c, r_ini + 1)]), dados=valores))
+    return saida
+
+
 def eh_numero(txt):
     try:
         float(txt)
@@ -128,6 +157,13 @@ def main():
 
     saida = {"fonte": FONTE_SITE, "atualizado": datetime.date.today().isoformat(), "series": []}
     for col, id_, cfg in INDICADORES:
+        if cfg.get("tipo") == "comparacao":
+            cmp = le_comparacao(abas[cfg["aba"]])
+            cfg = {k: v for k, v in cfg.items() if k != "aba"}
+            saida["series"].append(dict(id=id_, coluna="aba " + id_, **{**cfg, "fonte": cfg.get("fonte", FONTE_PADRAO)},
+                                        mandatos=cmp, dados=[]))
+            print(f"  {id_:16s} comparação: " + ", ".join(f"{m['nome']} ({len(m['dados'])} meses)" for m in cmp))
+            continue
         cabecalho = (ind.get((col, 1)) or "").strip()
         dados = []
         for r, mes in meses.items():

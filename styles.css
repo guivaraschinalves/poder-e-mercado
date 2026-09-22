@@ -102,7 +102,7 @@ body {
 }
 .btn { display: inline-flex; align-items: center; gap: 7px; color: var(--ink); }
 
-.baixar { position: relative; }
+.baixar { position: relative; margin-left: auto; }   /* fica à direita mesmo sem os botões de início */
 .menu {
   position: absolute; right: 0; top: calc(100% + 6px); z-index: 5; min-width: 190px;
   background: var(--surface); border: 1px solid var(--border); border-radius: 10px;

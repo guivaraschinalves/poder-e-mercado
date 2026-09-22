@@ -32,6 +32,20 @@
     }
   };
 
+  // Cores das linhas do gráfico de comparação entre mandatos (uma por mandato).
+  // As faixas do fundo agrupam FHC I+II etc., então aqui as cores são próprias.
+  var CORES_MANDATO = {
+    "FHC I":     { dark: "#9DC3E6", light: "#1F4E79" },
+    "FHC II":    { dark: "#5B9BD5", light: "#2E75B6" },
+    "Lula I":    { dark: "#F4B183", light: "#E5904A" },
+    "Lula II":   { dark: "#ED7D31", light: "#A8480C" },
+    "Dilma I":   { dark: "#FF9999", light: "#E06666" },
+    "Dilma II":  { dark: "#E0474C", light: "#A61C21" },
+    "Temer":     { dark: "#B4A7D6", light: "#6A51A3" },
+    "Bolsonaro": { dark: "#4FC3C8", light: "#118D93" },
+    "Lula III":  { dark: "#A9D18E", light: "#4E7A2A" }
+  };
+
   var LAYOUTS = {
     wide: {
       W: 1920, H: 1080, y0: 214, y1: 928,
@@ -97,6 +111,9 @@
     (filhos || []).forEach(function (f) { n.appendChild(f); });
     return n;
   }
+  function ehComparacao(s) { return s.tipo === "comparacao"; }
+  function temDados(s) { return ehComparacao(s) ? !!(s.mandatos && s.mandatos.length) : !!s.dados.length; }
+
   function tema() { return document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark"; }
 
   var medidor = document.createElement("canvas").getContext("2d");
@@ -447,6 +464,176 @@
     };
   }
 
+  /* Comparação entre mandatos: uma linha por mandato, eixo X em meses desde a
+   * posse (mês 0 = dezembro anterior, onde todas partem de zero). Não tem faixa
+   * de governo no fundo — o que separa os mandatos é a cor da linha. */
+  function construirComparacao(cartao, L0, nomeTema) {
+    var s = cartao.serie, pal = PALETAS[nomeTema];
+    var linhas = s.mandatos.map(function (m) {
+      var pts = [{ m: 0, v: 0 }];
+      m.dados.forEach(function (v, k) { pts.push({ m: k + 1, v: v }); });
+      return { nome: m.nome, inicio: m.inicio, fim: m.fim, pts: pts,
+               cor: (CORES_MANDATO[m.nome] || {})[nomeTema] || pal.linha };
+    });
+    var mMax = Math.max.apply(null, linhas.map(function (l) { return l.pts[l.pts.length - 1].m; }));
+    var vals = [];
+    linhas.forEach(function (l) { l.pts.forEach(function (p) { vals.push(p.v); }); });
+    var esc = escalaY(vals, { minFixo: null });
+
+    var fsRot = L0.tick * 0.95;
+    var rotulos = linhas.map(function (l) {
+      var ult = l.pts[l.pts.length - 1];
+      return { l: l, v: ult.v, m: ult.m, txt: l.nome + "  " + comSinal(ult.v, s.casas) };
+    });
+    var rw = Math.max.apply(null, rotulos.map(function (r) { return largura(r.txt, fsRot, "bold"); }));
+    var tw = Math.max.apply(null, esc.ticks.map(function (t) { return largura(fmtComparacao(s, t), L0.tick); }));
+
+    var L = Object.assign({}, L0, {
+      x0: 26 + tw + 14,
+      x1: L0.W - 26 - rw - 22,
+      y0: L0.sub.y + L0.sub.fs * 1.9,
+      y1: L0.fonte.y - L0.fonte.fs * 1.6 - L0.xlab * 2.4
+    });
+    var pw = L.x1 - L.x0, ph = L.y1 - L.y0;
+    var X = function (m) { return L.x0 + m / mMax * pw; };
+    var Y = function (v) { return L.y1 - (v - esc.min) / (esc.max - esc.min) * ph; };
+
+    var svg = el("svg", {
+      xmlns: NS, viewBox: "0 0 " + L.W + " " + L.H, width: L.W, height: L.H,
+      role: "img", "aria-label": s.titulo + " — " + s.subtitulo
+    });
+    var desenhos = [];
+
+    // grade + eixo Y (o zero é a linha da posse)
+    esc.ticks.forEach(function (t) {
+      var y = Y(t), ehZero = Math.abs(t) < esc.passo * 1e-6;
+      svg.appendChild(el("line", {
+        x1: L.x0, x2: L.x1, y1: y, y2: y, stroke: ehZero ? pal.zero : pal.grade, "stroke-width": ehZero ? 2 : 1.5
+      }));
+      svg.appendChild(texto(fmtComparacao(s, t), {
+        x: L.x0 - 16, y: y, "font-size": L.tick, fill: pal.eixo, "text-anchor": "end", "dominant-baseline": "central"
+      }));
+    });
+
+    // eixo X: meses de mandato, de 6 em 6 (ou 12 em 12 quando aperta)
+    var passoX = 6;
+    while (pw / mMax * passoX < largura("48", L.xlab) * 2.2) passoX += 6;
+    for (var m = 0; m <= mMax; m += passoX) {
+      var cx = X(m);
+      svg.appendChild(el("line", { x1: cx, x2: cx, y1: L.y1, y2: L.y1 + 8, stroke: pal.zero, "stroke-width": 1.5 }));
+      svg.appendChild(texto(String(m), {
+        x: cx, y: L.y1 + 10 + L.xlab * 0.9, "font-size": L.xlab, fill: pal.eixo, "text-anchor": "middle"
+      }));
+    }
+    svg.appendChild(texto("meses de mandato", {
+      x: L.x1, y: L.y1 + 16 + L.xlab * 2.1, "font-size": L.xlab * 0.92, fill: pal.suave, "text-anchor": "end"
+    }));
+
+    // linhas (a última — o mandato em curso — vem por cima e mais grossa)
+    linhas.forEach(function (l, k) {
+      var d = "";
+      l.pts.forEach(function (p, j) { d += (j ? "L" : "M") + X(p.m).toFixed(1) + " " + Y(p.v).toFixed(1); });
+      svg.appendChild(el("path", {
+        d: d, fill: "none", stroke: l.cor, "stroke-width": k === linhas.length - 1 ? L.linha : L.linha * 0.62,
+        "stroke-linejoin": "round", "stroke-linecap": "round"
+      }));
+    });
+
+    // rótulo de cada linha à direita, sem sobrepor (ligado por um tracejado
+    // quando o mandato acabou antes do fim do eixo)
+    var passoRot = fsRot * 1.3;
+    var ordem = rotulos.map(function (r) { return { r: r, y: Math.min(Math.max(Y(r.v), L.y0), L.y1) }; })
+      .sort(function (a, b) { return a.y - b.y; });
+    for (var i = 1; i < ordem.length; i++) {
+      if (ordem[i].y - ordem[i - 1].y < passoRot) ordem[i].y = ordem[i - 1].y + passoRot;
+    }
+    var excesso = ordem.length ? ordem[ordem.length - 1].y - L.y1 : 0;
+    if (excesso > 0) ordem.forEach(function (o) { o.y -= excesso; });
+    ordem.forEach(function (o) {
+      var r = o.r, px = X(r.m), py = Y(r.v), rx = L.x1 + 14;
+      svg.appendChild(el("circle", { cx: px, cy: py, r: L.linha * 0.7, fill: r.l.cor }));
+      svg.appendChild(el("line", {
+        x1: px + 6, y1: py, x2: rx - 6, y2: o.y, stroke: r.l.cor, "stroke-width": 1.5,
+        "stroke-dasharray": "5 5", "stroke-opacity": 0.75
+      }));
+      svg.appendChild(texto(r.txt, {
+        x: rx, y: o.y, "font-size": fsRot, "font-weight": "bold", fill: r.l.cor, "dominant-baseline": "central"
+      }));
+    });
+
+    svg.appendChild(texto(s.titulo, {
+      x: L.titulo.x, y: L.titulo.y, "font-weight": "bold", fill: pal.texto,
+      "font-size": corpoQueCabe(s.titulo, L.titulo.fs, L.tituloMax, "bold")
+    }));
+    svg.appendChild(texto(s.subtitulo, {
+      x: L.sub.x, y: L.sub.y, "font-size": corpoQueCabe(s.subtitulo, L.sub.fs, L.tituloMax), fill: pal.suave
+    }));
+    svg.appendChild(texto("Fonte: " + (s.fonte || meta.fonte) + ".", {
+      x: L.fonte.x, y: L.fonte.y, "font-size": L.fonte.fs, fill: pal.suave, "text-anchor": "end"
+    }));
+    desenhos.push({ src: pal.logo, x: L.logo.x, y: L.logo.y, w: L.logo.w, h: L.logo.w * LOGO_RAZAO });
+
+    return { svg: svg, L: L, pal: pal, X: X, Y: Y, mMax: mMax, linhas: linhas, desenhos: desenhos };
+  }
+
+  function fmtComparacao(s, v) { return comSinal(v, 0) + " p.p."; }
+
+  // passar o mouse no gráfico de comparação: mostra o mês e todos os mandatos
+  function ligarHoverComparacao(cartao, g) {
+    var svg = g.svg, L = g.L, pal = g.pal, s = cartao.serie;
+    var camada = el("g", { "pointer-events": "none", "class": "hover" });
+    var alvo = el("rect", { x: L.x0, y: L.y0, width: L.x1 - L.x0, height: L.y1 - L.y0, fill: "transparent" });
+    svg.appendChild(alvo);
+    svg.appendChild(camada);
+
+    function limpar() { while (camada.firstChild) camada.removeChild(camada.firstChild); }
+    function mover(ev) {
+      var pt = svg.createSVGPoint();
+      pt.x = ev.clientX; pt.y = ev.clientY;
+      var p = pt.matrixTransform(svg.getScreenCTM().inverse());
+      var m = Math.round((p.x - L.x0) / (L.x1 - L.x0) * g.mMax);
+      m = Math.max(0, Math.min(g.mMax, m));
+      limpar();
+      var x = g.X(m);
+      camada.appendChild(el("line", {
+        x1: x, x2: x, y1: L.y0, y2: L.y1, stroke: pal.suave, "stroke-width": 1.5, "stroke-dasharray": "6 6"
+      }));
+      var itens = [];
+      g.linhas.forEach(function (l) {
+        var q = l.pts[m];
+        if (!q || q.m !== m) return;
+        itens.push({ nome: l.nome, v: q.v, cor: l.cor });
+        camada.appendChild(el("circle", { cx: x, cy: g.Y(q.v), r: L.linha * 0.8, fill: l.cor, stroke: pal.bg, "stroke-width": 2 }));
+      });
+      itens.sort(function (a, b) { return b.v - a.v; });
+      var fs = L.tip * 0.8, pad = fs * 0.6;
+      var titulo = m === 0 ? "Início do mandato" : "Mês " + m + " de mandato";
+      var w = Math.max(largura(titulo, fs, "bold"), Math.max.apply(null, itens.map(function (it) {
+        return largura(it.nome + "   " + comSinal(it.v, s.casas) + " p.p.", fs) + fs * 0.9;
+      }))) + pad * 2;
+      var h = (itens.length + 1) * fs * 1.35 + pad * 1.4;
+      var bx = x + 24; if (bx + w > L.x1 + 40) bx = x - 24 - w;
+      var by = Math.max(L.y0 + 10, Math.min(L.y1 - h - 10, L.y0 + 10));
+      camada.appendChild(el("rect", {
+        x: bx, y: by, width: w, height: h, rx: 8, fill: pal.tipBg, stroke: pal.tipBorda, "stroke-width": 1.5
+      }));
+      camada.appendChild(texto(titulo, {
+        x: bx + pad, y: by + pad * 0.7 + fs * 0.7, "font-size": fs, "font-weight": "bold", fill: pal.texto
+      }));
+      itens.forEach(function (it, k) {
+        var ty = by + pad * 0.7 + fs * 0.7 + (k + 1) * fs * 1.35;
+        camada.appendChild(el("circle", { cx: bx + pad + fs * 0.25, cy: ty - fs * 0.3, r: fs * 0.26, fill: it.cor }));
+        camada.appendChild(texto(it.nome, { x: bx + pad + fs * 0.9, y: ty, "font-size": fs, fill: pal.suave }));
+        camada.appendChild(texto(comSinal(it.v, s.casas) + " p.p.", {
+          x: bx + w - pad, y: ty, "font-size": fs, "font-weight": "bold", fill: pal.texto, "text-anchor": "end"
+        }));
+      });
+    }
+    alvo.addEventListener("pointermove", mover);
+    alvo.addEventListener("pointerdown", mover);
+    alvo.addEventListener("pointerleave", limpar);
+  }
+
   // na tela as imagens entram como <image href>; no PNG elas vão para o canvas
   function imagensNoSvg(g) {
     g.desenhos.forEach(function (im) {
@@ -543,16 +730,16 @@
   }
 
   function criarCartao(s) {
-    var cartao = { serie: s, periodo: s.dados.length ? periodosDisponiveis(s)[0].id : null, inicioIdx: null, chave: null };
-    var vazio = !s.dados.length;
-    if (!vazio) cartao.inicioIdx = inicioDoPeriodo(s, cartao.periodo);
+    var cartao = { serie: s, periodo: temDados(s) && !ehComparacao(s) ? periodosDisponiveis(s)[0].id : null, inicioIdx: null, chave: null };
+    var vazio = !temDados(s);
+    if (!vazio && !ehComparacao(s)) cartao.inicioIdx = inicioDoPeriodo(s, cartao.periodo);
 
     var frame = html("div", { "class": "frame" });
     var raiz = html("article", { "class": "card", id: s.id });
     raiz.appendChild(html("h2", { "class": "sr-only", texto: s.titulo + " — " + s.subtitulo }));
 
     var ferramentas = html("div", { "class": "card-tools" });
-    if (!vazio) {
+    if (!vazio && !ehComparacao(s)) {
       var grupo = html("div", { "class": "periodos", role: "group", "aria-label": "Início do gráfico de " + s.titulo });
       grupo.appendChild(html("span", { "class": "periodos-rotulo", texto: "Início:" }));
       periodosDisponiveis(s).forEach(function (p) {
@@ -570,8 +757,8 @@
         grupo.appendChild(b);
       });
       ferramentas.appendChild(grupo);
-      ferramentas.appendChild(menuBaixar(cartao));
     }
+    if (!vazio) ferramentas.appendChild(menuBaixar(cartao));
     raiz.appendChild(ferramentas);
     raiz.appendChild(frame);
 
@@ -589,18 +776,22 @@
   }
 
   function desenhar(cartao, forcar) {
-    if (!cartao.serie.dados.length) return;
+    if (!temDados(cartao.serie)) return;
     var nomeLayout = cartao.frame.clientWidth < 700 || window.innerWidth < 700 ? "narrow" : "wide";
     var chave = nomeLayout + "|" + tema() + "|" + cartao.periodo;
     if (!forcar && cartao.chave === chave) return;
     cartao.chave = chave;
     var L = LAYOUTS[nomeLayout];
-    var g = construir(cartao, L, tema());
+    var g = desenhoDe(cartao, L, tema());
     imagensNoSvg(g);
-    ligarHover(cartao, g);
+    if (ehComparacao(cartao.serie)) ligarHoverComparacao(cartao, g); else ligarHover(cartao, g);
     cartao.frame.style.aspectRatio = L.W + " / " + L.H;
     cartao.frame.innerHTML = "";
     cartao.frame.appendChild(g.svg);
+  }
+
+  function desenhoDe(cartao, L, nomeTema) {
+    return ehComparacao(cartao.serie) ? construirComparacao(cartao, L, nomeTema) : construir(cartao, L, nomeTema);
   }
 
   // ---------- baixar ----------
@@ -696,7 +887,7 @@
   function exportar(cartao, t, formato) {
     if (formato === "svg") return baixarSVG(cartao, t);
     var nomeTema = tema(), L = t.layout, k = t.escala;
-    var g = construir(cartao, L, nomeTema);
+    var g = desenhoDe(cartao, L, nomeTema);
     var W = L.W * k, H = L.H * k;
     // o SVG é rasterizado já no tamanho final: texto e linhas saem nítidos
     g.svg.setAttribute("width", W); g.svg.setAttribute("height", H);
@@ -757,7 +948,7 @@
 
   function baixarSVG(cartao, t) {
     var nomeTema = tema(), L = t.layout;
-    var g = construir(cartao, L, nomeTema);
+    var g = desenhoDe(cartao, L, nomeTema);
     Promise.all(g.desenhos.map(function (im) { return carregarImagem(im.src); })).then(function (r) {
       g.svg.insertBefore(el("rect", { x: 0, y: 0, width: L.W, height: L.H, fill: g.pal.bg }), g.svg.firstChild);
       g.desenhos.forEach(function (im, k) {
@@ -769,6 +960,19 @@
 
   function baixarCSV(cartao) {
     var s = cartao.serie, pct = s.formato === "pct";
+    if (ehComparacao(s)) {
+      var nomes = s.mandatos.map(function (m) { return m.nome.replace(/;/g, ","); });
+      var mMax = Math.max.apply(null, s.mandatos.map(function (m) { return m.dados.length; }));
+      var ls = ["mes_de_mandato;" + nomes.join(";")];
+      for (var k = 0; k <= mMax; k++) {
+        ls.push(k + ";" + s.mandatos.map(function (m) {
+          var v = k === 0 ? 0 : m.dados[k - 1];
+          return v === undefined ? "" : String(Math.round(v * 1e4) / 1e4).replace(".", ",");
+        }).join(";"));
+      }
+      salvar(new Blob(["﻿" + ls.join("\r\n")], { type: "text/csv;charset=utf-8" }), nomeArquivo(cartao, "csv"));
+      return;
+    }
     var linhas = ["mes;" + s.titulo.replace(/;/g, ",") + " (" + s.subtitulo.replace(/;/g, ",") + ");governo"];
     s.dados.forEach(function (d) {
       var i = idxMes(d[0]), gov = "";
@@ -814,7 +1018,7 @@
         cartoes.push(c);
         host.appendChild(c.raiz);
         var a = html("a", { href: "#" + s.id, texto: s.titulo });
-        if (!s.dados.length) a.className = "vazio";
+        if (!temDados(s)) a.className = "vazio";
         chips.appendChild(a);
       });
       cartoes.forEach(function (c) { desenhar(c, true); });
