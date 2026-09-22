@@ -772,7 +772,7 @@
 
   // ---------- carga ----------
   function pegarJSON(url) {
-    return fetch(url).then(function (r) {
+    return fetch(url, { cache: "no-cache" }).then(function (r) {   // sempre confere se há dados novos
       if (!r.ok) throw new Error(url + " → HTTP " + r.status);
       return r.json();
     });

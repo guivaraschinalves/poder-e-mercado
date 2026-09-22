@@ -44,7 +44,7 @@ INDICADORES = [
                        variacao="pct", fonte="B3 e Liberta")),
     ("F", "ibov-dolar", dict(titulo="Ibovespa em dólar", subtitulo="Pontos (Ibovespa / dólar)", formato="num",
                              casas=0, tipo="linha", variacao="pct", fonte="B3, BCB e Liberta")),
-    ("G", "primario", dict(titulo="Resultado Primário", subtitulo="% do PIB", formato="pct", casas=2,
+    ("G", "primario", dict(titulo="Resultado Primário do Governo Geral", subtitulo="% do PIB", formato="pct", casas=2,
                            tipo="linha", variacao="abs")),
     ("H", "divida-liquida", dict(titulo="Dívida Líquida", subtitulo="% do PIB", formato="pct", casas=2,
                                  tipo="linha", variacao="abs")),
