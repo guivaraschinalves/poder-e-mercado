@@ -46,14 +46,18 @@
 
   // Layout em pé (largura 1080). topo/base = margem livre para a interface do
   // Instagram nos Stories (o gráfico fica dentro da área segura).
-  function vertical(H, topo, base) {
+  // Na tela do celular (arquivo = false) os eixos são maiores, para ler no
+  // telefone; no arquivo baixado ficam na proporção dos nomes e do Δ/média.
+  function vertical(H, topo, base, arquivo) {
     var b = H - base;
+    var t = arquivo ? { tick: 26, xlab: 24, selo: 30, fonte: 20, baixo: 150 }
+                    : { tick: 36, xlab: 33, selo: 38, fonte: 30, baixo: 280 };
     return {
-      W: 1080, H: H, y0: topo + 330, y1: b - 280,
+      W: 1080, H: H, y0: topo + 330, y1: b - t.baixo,
       titulo: { x: 36, y: topo + 150, fs: 66 }, sub: { x: 38, y: topo + 205, fs: 38 },
       logo: { x: 664, y: topo + 30, w: 380 }, nome: { y: topo + 305, fs: 30 },
       faixa: { pad: 12, fotoH: 132, gap: 12, fs: 26 },
-      tick: 36, xlab: 33, selo: 38, fonte: { x: 1044, y: b - 28, fs: 30 },
+      tick: t.tick, xlab: t.xlab, selo: t.selo, fonte: { x: 1044, y: b - 24, fs: t.fonte },
       tip: 38, linha: 7, eixoDuplo: false, tituloMax: 1008
     };
   }
@@ -61,10 +65,10 @@
   // Tamanhos para baixar, todos em 2×: o desenho é vetorial, então sai nítido.
   var TAMANHOS = [
     { id: "slide", nome: "Apresentação 16:9", layout: LAYOUTS.wide, escala: 2 },
-    { id: "ig-4x5", nome: "Instagram feed 4:5", layout: vertical(1350, 0, 0), escala: 2 },
-    { id: "ig-3x4", nome: "Instagram feed 3:4", layout: vertical(1440, 0, 0), escala: 2 },
-    { id: "ig-1x1", nome: "Instagram quadrado 1:1", layout: vertical(1080, 0, 0), escala: 2 },
-    { id: "ig-story", nome: "Instagram Stories 9:16", layout: vertical(1920, 250, 340), escala: 2 }
+    { id: "ig-4x5", nome: "Instagram feed 4:5", layout: vertical(1350, 0, 0, true), escala: 2 },
+    { id: "ig-3x4", nome: "Instagram feed 3:4", layout: vertical(1440, 0, 0, true), escala: 2 },
+    { id: "ig-1x1", nome: "Instagram quadrado 1:1", layout: vertical(1080, 0, 0, true), escala: 2 },
+    { id: "ig-story", nome: "Instagram Stories 9:16", layout: vertical(1920, 250, 340, true), escala: 2 }
   ];
 
   var cartoes = [];
