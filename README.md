@@ -74,7 +74,9 @@ unidade são **suposições** a confirmar contra o Excel:
 - IPCA = variação acumulada em 12 meses; Resultado Primário = % do PIB;
   Endividamento = fração da renda (como está formatado no Excel).
 - IED = US$ milhões; IPOs = número de IPOs por mês.
-- A fonte do rodapé ("BCB e FtM") é a mesma para todos (`FONTE_PADRAO`).
+- A fonte do rodapé de cada gráfico é "BCB e Liberta" (`FONTE_PADRAO`), menos onde
+  o indicador define a sua: Ibovespa e IPOs "B3 e Liberta", Ibovespa em dólar
+  "B3, BCB e Liberta" (campo `fonte` em `INDICADORES`).
 
 ### Governos
 

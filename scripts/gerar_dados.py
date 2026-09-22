@@ -34,16 +34,16 @@ SAIDA_MANDATOS = os.path.join(RAIZ, "dados", "mandatos.json")
 # "soma" (total do período, para contagem).
 # minEixo: trava o piso do eixo Y (senão ele é escolhido pelos dados).
 INDICADORES = [
-    ("B", "selic", dict(titulo="Selic", subtitulo="% a.a.", formato="pct", casas=2, tipo="linha",
+    ("B", "selic", dict(titulo="Selic Over", subtitulo="% a.a.", formato="pct", casas=2, tipo="linha",
                         variacao="abs")),
     ("C", "ipca", dict(titulo="IPCA", subtitulo="Var. % acumulada em 12 meses", formato="pct", casas=2, tipo="linha",
                        variacao="abs", inicioPadrao="1996-01")),
     ("D", "dolar", dict(titulo="Dólar", subtitulo="R$ por US$", formato="num", casas=2, prefixo="R$ ",
                         tipo="linha", variacao="abs")),
     ("E", "ibov", dict(titulo="Ibovespa", subtitulo="Pontos", formato="num", casas=0, tipo="linha",
-                       variacao="pct")),
+                       variacao="pct", fonte="B3 e Liberta")),
     ("F", "ibov-dolar", dict(titulo="Ibovespa em dólar", subtitulo="Pontos (Ibovespa / dólar)", formato="num",
-                             casas=0, tipo="linha", variacao="pct")),
+                             casas=0, tipo="linha", variacao="pct", fonte="B3, BCB e Liberta")),
     ("G", "primario", dict(titulo="Resultado Primário", subtitulo="% do PIB", formato="pct", casas=2,
                            tipo="linha", variacao="abs")),
     ("H", "divida-liquida", dict(titulo="Dívida Líquida", subtitulo="% do PIB", formato="pct", casas=2,
@@ -54,11 +54,14 @@ INDICADORES = [
                       prefixo="US$ ", sufixo=" mi", tipo="linha", variacao="pct")),
     ("K", "familias", dict(titulo="Endividamento das Famílias", subtitulo="Exc. crédito habitacional", formato="pct",
                            casas=2, tipo="linha", variacao="abs", minEixo=0.10)),
-    ("L", "ipos", dict(titulo="IPOs na B3", subtitulo="Número de IPOs", formato="int", casas=0, tipo="barras",
-                       variacao="soma")),
+    ("L", "ipos", dict(titulo="IPOs na B3", subtitulo="Número de IPOs por mês, a partir de abril de 2004",
+                       formato="int", casas=0, tipo="barras", variacao="soma", fonte="B3 e Liberta")),
 ]
 
-FONTE_PADRAO = "BCB e FtM"
+# fonte do rodapé de cada gráfico, quando o indicador não define a sua
+FONTE_PADRAO = "BCB e Liberta"
+# fonte citada no rodapé da página (todas as séries)
+FONTE_SITE = "BCB, B3 e Liberta"
 
 # Presidentes da aba "Presidentes" → faixas exibidas. Os mandatos seguidos da
 # mesma pessoa viram uma faixa só (FHC I+II, Lula I+II, Dilma I+II), como no
@@ -123,7 +126,7 @@ def main():
     ultima = max(r for (c, r) in ind if c == "A" and eh_numero(ind[(c, r)]))
     meses = {r: serial_para_mes(ind[("A", r)]) for r in range(2, ultima + 1) if ("A", r) in ind}
 
-    saida = {"fonte": FONTE_PADRAO, "atualizado": datetime.date.today().isoformat(), "series": []}
+    saida = {"fonte": FONTE_SITE, "atualizado": datetime.date.today().isoformat(), "series": []}
     for col, id_, cfg in INDICADORES:
         cabecalho = (ind.get((col, 1)) or "").strip()
         dados = []
@@ -131,7 +134,7 @@ def main():
             v = ind.get((col, r))
             if eh_numero(v):
                 dados.append([mes, round(float(v), 6)])
-        serie = dict(id=id_, coluna=cabecalho, **cfg, dados=dados)
+        serie = dict(id=id_, coluna=cabecalho, **{**cfg, "fonte": cfg.get("fonte", FONTE_PADRAO)}, dados=dados)
         saida["series"].append(serie)
         if dados:
             print(f"  {id_:16s} {len(dados):4d} meses  {dados[0][0]} → {dados[-1][0]}  último={dados[-1][1]}")

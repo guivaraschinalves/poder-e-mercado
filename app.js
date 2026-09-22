@@ -434,7 +434,7 @@
       "font-size": corpoQueCabe(s.titulo, L.titulo.fs, L.tituloMax, "bold")
     }));
     svg.appendChild(texto(s.subtitulo, { x: L.sub.x, y: L.sub.y, "font-size": L.sub.fs, fill: pal.suave }));
-    svg.appendChild(texto("Fonte: " + meta.fonte + ".", {
+    svg.appendChild(texto("Fonte: " + (s.fonte || meta.fonte) + ".", {
       x: L.fonte.x, y: L.fonte.y, "font-size": L.fonte.fs, fill: pal.suave, "text-anchor": "end"
     }));
 
