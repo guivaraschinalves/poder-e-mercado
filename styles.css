@@ -115,6 +115,13 @@ body {
 }
 .menu button:hover, .menu button:focus-visible { background: var(--accent-wash); outline: none; }
 .menu small { display: block; color: var(--ink-2); font-size: 12px; }
+.menu { min-width: 260px; }
+.menu-rotulo { display: block; padding: 6px 10px 8px; font-size: 12px; color: var(--ink-2); }
+.menu-tamanho {
+  display: block; width: 100%; margin-top: 4px; font: inherit; font-size: 14px; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--border); border-radius: 7px; padding: 6px 8px;
+}
+.menu hr { border: 0; border-top: 1px solid var(--border); margin: 6px 4px; }
 
 .frame {
   position: relative; background: var(--chart-bg);

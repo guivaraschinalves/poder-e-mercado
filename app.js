@@ -41,15 +41,31 @@
       tick: 30, xlab: 28, selo: 34, fonte: { x: 1885, y: 1062, fs: 24 },
       tip: 30, linha: 6, eixoDuplo: true, tituloMax: 1330
     },
-    narrow: {
-      W: 1080, H: 1400, y0: 330, y1: 1120,
-      titulo: { x: 36, y: 150, fs: 66 }, sub: { x: 38, y: 205, fs: 38 },
-      logo: { x: 664, y: 30, w: 380 }, nome: { y: 305, fs: 30 },
-      faixa: { pad: 12, fotoH: 132, gap: 12, fs: 26 },
-      tick: 36, xlab: 33, selo: 38, fonte: { x: 1044, y: 1372, fs: 30 },
-      tip: 38, linha: 7, eixoDuplo: false, tituloMax: 1008
-    }
+    narrow: vertical(1400, 0, 0)
   };
+
+  // Layout em pé (largura 1080). topo/base = margem livre para a interface do
+  // Instagram nos Stories (o gráfico fica dentro da área segura).
+  function vertical(H, topo, base) {
+    var b = H - base;
+    return {
+      W: 1080, H: H, y0: topo + 330, y1: b - 280,
+      titulo: { x: 36, y: topo + 150, fs: 66 }, sub: { x: 38, y: topo + 205, fs: 38 },
+      logo: { x: 664, y: topo + 30, w: 380 }, nome: { y: topo + 305, fs: 30 },
+      faixa: { pad: 12, fotoH: 132, gap: 12, fs: 26 },
+      tick: 36, xlab: 33, selo: 38, fonte: { x: 1044, y: b - 28, fs: 30 },
+      tip: 38, linha: 7, eixoDuplo: false, tituloMax: 1008
+    };
+  }
+
+  // Tamanhos para baixar, todos em 2×: o desenho é vetorial, então sai nítido.
+  var TAMANHOS = [
+    { id: "slide", nome: "Apresentação 16:9", layout: LAYOUTS.wide, escala: 2 },
+    { id: "ig-4x5", nome: "Instagram feed 4:5", layout: vertical(1350, 0, 0), escala: 2 },
+    { id: "ig-3x4", nome: "Instagram feed 3:4", layout: vertical(1440, 0, 0), escala: 2 },
+    { id: "ig-1x1", nome: "Instagram quadrado 1:1", layout: vertical(1080, 0, 0), escala: 2 },
+    { id: "ig-story", nome: "Instagram Stories 9:16", layout: vertical(1920, 250, 340), escala: 2 }
+  ];
 
   var cartoes = [];
   var mandatos = [];
@@ -567,22 +583,54 @@
   }
 
   // ---------- baixar ----------
+  var FORMATOS = [
+    { id: "png", nome: "PNG", nota: "sem perda, o mais nítido" },
+    { id: "jpg", nome: "JPG", nota: "arquivo menor, para redes e WhatsApp" },
+    { id: "pdf", nome: "PDF", nota: "para imprimir ou anexar" },
+    { id: "svg", nome: "SVG", nota: "vetor editável (Illustrator/Figma)" }
+  ];
+  var tamanhoEscolhido = "slide";
+  try { tamanhoEscolhido = localStorage.getItem("pm_tamanho") || "slide"; } catch (e) {}
+
+  function tamanhoPorId(id) {
+    return TAMANHOS.filter(function (t) { return t.id === id; })[0] || TAMANHOS[0];
+  }
+  function dimensoes(t) { return (t.layout.W * t.escala) + "×" + (t.layout.H * t.escala); }
+
   function menuBaixar(cartao) {
     var caixa = html("div", { "class": "baixar" });
     var botao = html("button", { type: "button", "class": "btn", "aria-haspopup": "menu", "aria-expanded": "false" });
     botao.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" ' +
       'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 20h16"/></svg><span>Baixar</span>';
     var menu = html("div", { "class": "menu", role: "menu", hidden: "" });
-    [
-      ["Imagem (PNG)", "1920×1080, no tema atual", baixarPNG],
-      ["Vetor (SVG)", "editável no Illustrator/Figma", baixarSVG],
-      ["Dados (CSV)", "mês e valor, para o Excel", baixarCSV]
-    ].forEach(function (it) {
+
+    var rotTam = html("label", { "class": "menu-rotulo", texto: "Tamanho" });
+    var sel = html("select", { "class": "menu-tamanho", "aria-label": "Tamanho da imagem" });
+    TAMANHOS.forEach(function (t) {
+      var o = html("option", { value: t.id, texto: t.nome + " · " + dimensoes(t) });
+      if (t.id === tamanhoPorId(tamanhoEscolhido).id) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.addEventListener("change", function () {
+      tamanhoEscolhido = sel.value;
+      try { localStorage.setItem("pm_tamanho", sel.value); } catch (e) {}
+      document.querySelectorAll(".menu-tamanho").forEach(function (x) { x.value = sel.value; });
+    });
+    rotTam.appendChild(sel);
+    menu.appendChild(rotTam);
+
+    FORMATOS.forEach(function (f) {
       var b = html("button", { type: "button", role: "menuitem" });
-      b.innerHTML = it[0] + "<small>" + it[1] + "</small>";
-      b.addEventListener("click", function () { fechar(); it[2](cartao); });
+      b.innerHTML = "Imagem (" + f.nome + ")<small>" + f.nota + ", no tema atual</small>";
+      b.addEventListener("click", function () { fechar(); exportar(cartao, tamanhoPorId(sel.value), f.id); });
       menu.appendChild(b);
     });
+    menu.appendChild(html("hr"));
+    var bc = html("button", { type: "button", role: "menuitem" });
+    bc.innerHTML = "Dados (CSV)<small>mês e valor, para o Excel</small>";
+    bc.addEventListener("click", function () { fechar(); baixarCSV(cartao); });
+    menu.appendChild(bc);
+
     function fechar() { menu.hidden = true; botao.setAttribute("aria-expanded", "false"); }
     botao.addEventListener("click", function (e) {
       e.stopPropagation();
@@ -605,7 +653,9 @@
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
   }
-  function nomeArquivo(cartao, ext) { return "poder-e-mercado-" + cartao.serie.id + "." + ext; }
+  function nomeArquivo(cartao, ext, t) {
+    return "poder-e-mercado-" + cartao.serie.id + (t && t.id !== "slide" ? "-" + t.id : "") + "." + ext;
+  }
   function carregarImagem(src) {
     return new Promise(function (ok, erro) {
       var im = new Image();
@@ -622,34 +672,77 @@
     return c.toDataURL(/\.png$/i.test(im.src) ? "image/png" : "image/jpeg", 0.92);
   }
 
-  function baixarPNG(cartao) {
-    var nomeTema = tema(), L = LAYOUTS.wide;
+  function exportar(cartao, t, formato) {
+    if (formato === "svg") return baixarSVG(cartao, t);
+    var nomeTema = tema(), L = t.layout, k = t.escala;
     var g = construir(cartao, L, nomeTema);
-    var xml = serializar(g.svg);
+    var W = L.W * k, H = L.H * k;
+    // o SVG é rasterizado já no tamanho final: texto e linhas saem nítidos
+    g.svg.setAttribute("width", W); g.svg.setAttribute("height", H);
     Promise.all([
-      carregarImagem("data:image/svg+xml;charset=utf-8," + encodeURIComponent(xml)),
+      carregarImagem("data:image/svg+xml;charset=utf-8," + encodeURIComponent(serializar(g.svg))),
       nomeTema === "dark" ? carregarImagem("assets/fundo.jpg") : Promise.resolve(null)
     ].concat(g.desenhos.map(function (im) { return carregarImagem(im.src); }))).then(function (r) {
       var c = document.createElement("canvas");
-      c.width = L.W; c.height = L.H;
+      c.width = W; c.height = H;
       var x = c.getContext("2d");
-      x.fillStyle = g.pal.bg; x.fillRect(0, 0, L.W, L.H);
-      if (r[1]) x.drawImage(r[1], 0, 0, L.W, L.H);
-      x.drawImage(r[0], 0, 0, L.W, L.H);
-      g.desenhos.forEach(function (im, k) { x.drawImage(r[k + 2], im.x, im.y, im.w, im.h); });
-      c.toBlob(function (b) { salvar(b, nomeArquivo(cartao, "png")); }, "image/png");
-    }).catch(function (e) { alert("Não consegui gerar o PNG: " + e.message); });
+      x.imageSmoothingEnabled = true; x.imageSmoothingQuality = "high";
+      x.fillStyle = g.pal.bg; x.fillRect(0, 0, W, H);
+      if (r[1]) {
+        // fundo em "cover": preenche o quadro sem distorcer (recorta o excesso)
+        var f = r[1], z = Math.max(W / f.naturalWidth, H / f.naturalHeight);
+        var fw = f.naturalWidth * z, fh = f.naturalHeight * z;
+        x.drawImage(f, (W - fw) / 2, (H - fh) / 2, fw, fh);
+      }
+      x.drawImage(r[0], 0, 0, W, H);
+      g.desenhos.forEach(function (im, j) { x.drawImage(r[j + 2], im.x * k, im.y * k, im.w * k, im.h * k); });
+      if (formato === "png") {
+        c.toBlob(function (b) { salvar(b, nomeArquivo(cartao, "png", t)); }, "image/png");
+      } else if (formato === "jpg") {
+        c.toBlob(function (b) { salvar(b, nomeArquivo(cartao, "jpg", t)); }, "image/jpeg", 0.95);
+      } else {
+        c.toBlob(function (b) {
+          b.arrayBuffer().then(function (buf) {
+            salvar(pdfComJpeg(new Uint8Array(buf), W, H, L.W * 0.75, L.H * 0.75), nomeArquivo(cartao, "pdf", t));
+          });
+        }, "image/jpeg", 0.97);
+      }
+    }).catch(function (e) { alert("Não consegui gerar a imagem: " + e.message); });
   }
 
-  function baixarSVG(cartao) {
-    var nomeTema = tema(), L = LAYOUTS.wide;
+  // PDF de uma página com a imagem (JPEG) ocupando a página toda.
+  // pw/ph em pontos: 1 px do layout = 0,75 pt (96 dpi), então 16:9 vira 1440×810 pt.
+  function pdfComJpeg(jpeg, iw, ih, pw, ph) {
+    var enc = new TextEncoder(), partes = [], tam = 0, offs = [];
+    function add(x) { var b = typeof x === "string" ? enc.encode(x) : x; partes.push(b); tam += b.length; }
+    function obj(n, corpo) { offs[n] = tam; add(n + " 0 obj\n" + corpo + "\nendobj\n"); }
+    var conteudo = "q " + pw + " 0 0 " + ph + " 0 0 cm /Im0 Do Q";
+    add("%PDF-1.4\n%\xE2\xE3\xCF\xD3\n");
+    obj(1, "<< /Type /Catalog /Pages 2 0 R >>");
+    obj(2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+    obj(3, "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 " + pw + " " + ph + "] " +
+      "/Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>");
+    offs[4] = tam;
+    add("4 0 obj\n<< /Type /XObject /Subtype /Image /Width " + iw + " /Height " + ih +
+      " /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length " + jpeg.length + " >>\nstream\n");
+    add(jpeg);
+    add("\nendstream\nendobj\n");
+    obj(5, "<< /Length " + conteudo.length + " >>\nstream\n" + conteudo + "\nendstream");
+    var xref = tam, linhas = "xref\n0 6\n0000000000 65535 f \n";
+    for (var i = 1; i <= 5; i++) linhas += String(offs[i]).padStart(10, "0") + " 00000 n \n";
+    add(linhas + "trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n" + xref + "\n%%EOF\n");
+    return new Blob(partes, { type: "application/pdf" });
+  }
+
+  function baixarSVG(cartao, t) {
+    var nomeTema = tema(), L = t.layout;
     var g = construir(cartao, L, nomeTema);
     Promise.all(g.desenhos.map(function (im) { return carregarImagem(im.src); })).then(function (r) {
       g.svg.insertBefore(el("rect", { x: 0, y: 0, width: L.W, height: L.H, fill: g.pal.bg }), g.svg.firstChild);
       g.desenhos.forEach(function (im, k) {
         g.svg.appendChild(el("image", { href: comoDataURL(r[k]), x: im.x, y: im.y, width: im.w, height: im.h }));
       });
-      salvar(new Blob([serializar(g.svg)], { type: "image/svg+xml" }), nomeArquivo(cartao, "svg"));
+      salvar(new Blob([serializar(g.svg)], { type: "image/svg+xml" }), nomeArquivo(cartao, "svg", t));
     }).catch(function (e) { alert("Não consegui gerar o SVG: " + e.message); });
   }
 

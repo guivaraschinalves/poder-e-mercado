@@ -8,8 +8,11 @@ variação e a média do período. Site estático, sem build: `index.html` +
 
 - **Modo escuro/claro** — botão no topo (o escuro é o padrão e reproduz o
   visual do gráfico de referência; a escolha fica salva no navegador).
-- **Baixar** — em cada gráfico: PNG 1920×1080 (no tema que estiver na tela),
-  SVG editável e CSV com os dados.
+- **Baixar** — em cada gráfico, no tema da tela, em PNG, JPG, PDF ou SVG
+  editável, e o CSV com os dados. Tamanhos (todos em 2×, para sair nítido):
+  apresentação 16:9 (3840×2160) e Instagram feed 4:5 (2160×2700), feed 3:4
+  (2160×2880), quadrado 1:1 (2160×2160) e Stories 9:16 (2160×3840, com o
+  gráfico dentro da área segura, longe das barras do app).
 - **Período** — Tudo / 20 / 10 / 5 anos. O IPCA abre em 1996 porque o valor de
   jan/1995 (631%) achata todo o resto; "Tudo" mostra desde 1995.
 - Passe o mouse (ou toque) no gráfico para ver o valor do mês e o governo.
