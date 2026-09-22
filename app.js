@@ -512,22 +512,38 @@
   }
 
   // ---------- cartão ----------
+  // Botões "Início:" — cada mandato individual (as faixas do fundo agrupam
+  // FHC I e II etc., mas aqui dá para começar em qualquer um).
+  var INICIOS = [
+    { id: "fhc1", rot: "FHC I", inicio: "1995-01" }, { id: "fhc2", rot: "FHC II", inicio: "1999-01" },
+    { id: "lula1", rot: "Lula I", inicio: "2003-01" }, { id: "lula2", rot: "Lula II", inicio: "2007-01" },
+    { id: "dilma1", rot: "Dilma I", inicio: "2011-01" }, { id: "dilma2", rot: "Dilma II", inicio: "2015-01" },
+    { id: "temer", rot: "Temer", inicio: "2016-08" }, { id: "bolsonaro", rot: "Bolsonaro", inicio: "2019-01" },
+    { id: "lula3", rot: "Lula III", inicio: "2023-01" }
+  ];
+
+  // Só os mandatos em que a série tem dado. Se a série começa no meio de um
+  // mandato, o botão dele começa no primeiro dado. O primeiro botão respeita
+  // o inicioPadrao (IPCA: 1996, sem a hiperinflação de jan/95).
   function periodosDisponiveis(s) {
-    var meses = idxMes(s.dados[s.dados.length - 1][0]) - idxMes(s.dados[0][0]) + 1;
+    var d0 = idxMes(s.dados[0][0]), d1 = idxMes(s.dados[s.dados.length - 1][0]);
     var lista = [];
-    if (s.inicioPadrao) lista.push({ id: "padrao", rot: "Desde " + s.inicioPadrao.slice(0, 4) });
-    lista.push({ id: "tudo", rot: "Tudo" });
-    [20, 10, 5].forEach(function (a) { if (meses > a * 12 * 1.1) lista.push({ id: String(a), rot: a + " anos" }); });
+    INICIOS.forEach(function (m, k) {
+      var ini = idxMes(m.inicio), fim = k + 1 < INICIOS.length ? idxMes(INICIOS[k + 1].inicio) - 1 : Infinity;
+      if (fim < d0 || ini > d1) return;
+      var comeco = Math.max(ini, d0);
+      if (!lista.length && s.inicioPadrao) comeco = Math.max(comeco, idxMes(s.inicioPadrao));
+      lista.push({ id: m.id, rot: m.rot, inicio: comeco });
+    });
     return lista;
   }
   function inicioDoPeriodo(s, id) {
-    if (id === "tudo") return null;
-    if (id === "padrao") return idxMes(s.inicioPadrao);
-    return idxMes(s.dados[s.dados.length - 1][0]) - (+id) * 12 + 1;
+    var p = periodosDisponiveis(s).filter(function (x) { return x.id === id; })[0];
+    return p ? p.inicio : null;
   }
 
   function criarCartao(s) {
-    var cartao = { serie: s, periodo: s.inicioPadrao ? "padrao" : "tudo", inicioIdx: null, chave: null };
+    var cartao = { serie: s, periodo: s.dados.length ? periodosDisponiveis(s)[0].id : null, inicioIdx: null, chave: null };
     var vazio = !s.dados.length;
     if (!vazio) cartao.inicioIdx = inicioDoPeriodo(s, cartao.periodo);
 
@@ -537,7 +553,8 @@
 
     var ferramentas = html("div", { "class": "card-tools" });
     if (!vazio) {
-      var grupo = html("div", { "class": "periodos", role: "group", "aria-label": "Período de " + s.titulo });
+      var grupo = html("div", { "class": "periodos", role: "group", "aria-label": "Início do gráfico de " + s.titulo });
+      grupo.appendChild(html("span", { "class": "periodos-rotulo", texto: "Início:" }));
       periodosDisponiveis(s).forEach(function (p) {
         var b = html("button", {
           type: "button", texto: p.rot, "data-p": p.id, "aria-pressed": String(p.id === cartao.periodo)
@@ -545,7 +562,7 @@
         b.addEventListener("click", function () {
           cartao.periodo = p.id;
           cartao.inicioIdx = inicioDoPeriodo(s, p.id);
-          Array.prototype.forEach.call(grupo.children, function (x) {
+          Array.prototype.forEach.call(grupo.querySelectorAll("button"), function (x) {
             x.setAttribute("aria-pressed", String(x.getAttribute("data-p") === p.id));
           });
           desenhar(cartao, true);

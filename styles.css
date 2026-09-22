@@ -89,7 +89,8 @@ body {
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
   gap: 10px; padding: 12px 14px;
 }
-.periodos { display: flex; flex-wrap: wrap; gap: 6px; }
+.periodos { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.periodos-rotulo { font-size: 13px; color: var(--ink-2); margin-right: 2px; }
 .periodos button, .btn {
   font: inherit; font-size: 14px; color: var(--ink-2); cursor: pointer;
   background: transparent; border: 1px solid var(--border);

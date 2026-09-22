@@ -13,8 +13,10 @@ variação e a média do período. Site estático, sem build: `index.html` +
   apresentação 16:9 (3840×2160) e Instagram feed 4:5 (2160×2700), feed 3:4
   (2160×2880), quadrado 1:1 (2160×2160) e Stories 9:16 (2160×3840, com o
   gráfico dentro da área segura, longe das barras do app).
-- **Período** — Tudo / 20 / 10 / 5 anos. O IPCA abre em 1996 porque o valor de
-  jan/1995 (631%) achata todo o resto; "Tudo" mostra desde 1995.
+- **Início** — FHC I, FHC II, Lula I, Lula II, Dilma I, Dilma II, Temer,
+  Bolsonaro, Lula III: o gráfico começa no primeiro mês do mandato escolhido
+  (só aparecem os mandatos em que a série tem dados). No IPCA, "FHC I" começa
+  em jan/1996, porque o valor de jan/1995 (631%) achata todo o resto.
 - Passe o mouse (ou toque) no gráfico para ver o valor do mês e o governo.
 - O eixo X marca sempre janeiro, de ano em ano (de 2 em 2 na tela do celular,
   onde um ano não comporta o rótulo).
@@ -45,8 +47,8 @@ rodar o script de novo.
 
 ### Δ e Média de cada mandato
 
-Calculados na hora de desenhar, sobre os meses **visíveis** da faixa (com
-"Tudo" selecionado, é o mandato inteiro). O campo `variacao` em
+Calculados na hora de desenhar, sobre os meses **visíveis** da faixa (começando
+no primeiro mandato disponível, é o mandato inteiro). O campo `variacao` em
 `scripts/gerar_dados.py` escolhe a conta:
 
 | `variacao` | Δ mostrado | Usado em |
