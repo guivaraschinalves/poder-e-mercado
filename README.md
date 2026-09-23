@@ -134,6 +134,11 @@ As cores foram amostradas do modelo feito no PowerPoint e só servem para
 distinguir uma faixa da outra. Cada faixa aponta para o retrato oficial em
 `assets/presidentes/` — trocar a foto é trocar o arquivo, mantendo o nome.
 
+Antes deles vem `ANTERIORES`, escrito à mão no script porque a aba *Presidentes*
+começa no FHC: Sarney (mar/1985), Collor (mar/1990) e Itamar (out/1992, quando o
+Senado afastou Collor). Só aparecem no gráfico de rating, que é o único com dados
+anteriores a 1995, e não têm retrato.
+
 ## Testar localmente
 
 ```bash

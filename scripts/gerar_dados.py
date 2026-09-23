@@ -85,6 +85,19 @@ GOVERNOS = [
 ]
 
 
+# Presidentes anteriores a 1995. A aba "Presidentes" começa no FHC, mas o rating
+# soberano vai até 1986 — sem estes, o começo do gráfico fica sem faixa. As datas
+# são as do mês em que cada um assumiu de fato: Sarney em março de 1985, Collor
+# em março de 1990 e Itamar em outubro de 1992, quando Collor foi afastado pelo
+# Senado (a renúncia veio em 29/12/1992). Sem retrato: as faixas do rating não
+# mostram foto. As outras séries começam em 1995 e nunca exibem estas faixas.
+ANTERIORES = [
+    dict(id="sarney", nome="Sarney", cor="#4E4A6E", foto=None, inicio="1985-03", fim="1990-02"),
+    dict(id="collor", nome="Collor", cor="#7A4A63", foto=None, inicio="1990-03", fim="1992-09"),
+    dict(id="itamar", nome="Itamar", cor="#3F5E4A", foto=None, inicio="1992-10", fim="1994-12"),
+]
+
+
 def serial_para_mes(n):
     d = datetime.date(1899, 12, 30) + datetime.timedelta(days=int(float(n)))
     return d.strftime("%Y-%m")
@@ -283,7 +296,7 @@ def main():
         if marcados:
             periodos[nome] = (min(marcados), max(marcados))
 
-    mandatos = []
+    mandatos = list(ANTERIORES)
     for id_, rotulo, partes, cor, foto in GOVERNOS:
         faixa = [periodos[p] for p in partes]
         mandatos.append(dict(id=id_, nome=rotulo, cor=cor, foto="assets/presidentes/" + foto,

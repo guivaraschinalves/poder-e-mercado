@@ -700,18 +700,21 @@
         x: b.x0, y: L.y0, width: b.x1 - b.x0, height: ph, fill: b.m.cor, "fill-opacity": pal.faixaOp
       }));
     });
+    // faixa fina demais (um mês na borda, quando a série começa no meio de um
+    // mandato) não leva nome — e não encolhe o nome das outras
+    var comNome = blocos.filter(function (b) { return b.x1 - b.x0 > L.nome.fs * 1.5; });
     var nomeFs = L.nome.fs;
-    blocos.forEach(function (b, k) {
+    comNome.forEach(function (b, k) {
       nomeFs = Math.min(nomeFs, (b.cx - 8) * 200 / largura(b.m.nome, 100, "bold"),
         (L.W - 8 - b.cx) * 200 / largura(b.m.nome, 100, "bold"));
-      var prox = blocos[k + 1];
+      var prox = comNome[k + 1];
       if (prox) {
         nomeFs = Math.min(nomeFs, (prox.cx - b.cx - 16) * 200 /
           (largura(b.m.nome, 100, "bold") + largura(prox.m.nome, 100, "bold")));
       }
     });
     if (nomeFs >= L.nome.fs * 0.4) {
-      blocos.forEach(function (b) {
+      comNome.forEach(function (b) {
         svg.appendChild(texto(b.m.nome, {
           x: b.cx, y: L.nome.y, "font-size": nomeFs, "font-weight": "bold",
           fill: pal.faixaNome, "text-anchor": "middle"
@@ -729,12 +732,14 @@
     });
 
     // fronteira do grau de investimento: meio degrau abaixo de Baa3/BBB-
-    var yGI = Y(s.grauInvestimento - 0.5);
+    var yGI = Y(s.grauInvestimento - 0.5), passoY = ph / (nMax - nMin);
     svg.appendChild(el("line", {
       x1: L.x0, x2: L.x1, y1: yGI, y2: yGI, stroke: pal.zero, "stroke-width": 2.5, "stroke-dasharray": "10 7"
     }));
+    // o rótulo fica no vão entre a linha e o degrau de cima, sem cruzar a grade
+    var fsGI = Math.min(fsY * 0.8, passoY * 0.38);
     svg.appendChild(texto("grau de investimento", {
-      x: L.x0 + 12, y: yGI - fsY * 0.45, "font-size": fsY * 0.92, fill: pal.eixo
+      x: L.x0 + 12, y: yGI - fsGI * 0.32, "font-size": fsGI, fill: pal.zero
     }));
 
     // eixo X em anos cheios, de 5 em 5 (ou mais, se apertar)
