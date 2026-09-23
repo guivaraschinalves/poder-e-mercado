@@ -3,14 +3,16 @@
 Lê o Excel "Presidentes da República.xlsx" e escreve os dois JSON que o site
 consome:
 
-  dados/indicadores.json  — uma série mensal por coluna da aba "Outros Indicadores"
+  dados/indicadores.json  — uma série por indicador: as mensais da aba "Outros
+                            Indicadores", a comparação entre mandatos da aba
+                            "Dívida Bruta" e o rating da aba "Base Rating 2"
   dados/mandatos.json     — faixas de governo, derivadas da aba "Presidentes"
 
 Uso:
-    python3 scripts/gerar_dados.py "caminho/Presidentes da República.xlsx"
+    python3 scripts/gerar_dados.py "dados/Presidentes da República.xlsx"
 
 Só usa a biblioteca padrão (zipfile + xml): não precisa de openpyxl/pandas.
-O .xlsx não vai para o repositório — só os JSON gerados.
+O site lê só os JSON — o .xlsx fica no repositório apenas como fonte.
 """
 import json
 import os
@@ -58,6 +60,10 @@ INDICADORES = [
                            casas=2, tipo="linha", variacao="abs", minEixo=0.10)),
     ("L", "ipos", dict(titulo="IPOs na B3", subtitulo="Número de IPOs por mês, a partir de abril de 2004",
                        formato="int", casas=0, tipo="barras", variacao="soma", fonte="B3 e Liberta")),
+    # rating soberano: vem da aba "Base Rating 2", uma agência por vez no site
+    ("M", "rating", dict(titulo="Rating Soberano do Brasil",
+                         subtitulo="Nota de crédito de longo prazo", tipo="rating",
+                         aba="Base Rating 2", fonte="Moody's, S&P, Fitch e Liberta")),
 ]
 
 # fonte do rodapé de cada gráfico, quando o indicador não define a sua
@@ -137,6 +143,75 @@ def le_comparacao(aba):
     return saida
 
 
+# Aba "Base Rating 2": colunas de cada agência. Rótulos (moeda estrangeira,
+# moeda local, perspectiva), níveis numéricos das duas notas e, mais à direita,
+# a tabela de ações de rating (data do anúncio, nível e perspectiva).
+AGENCIAS = [
+    dict(id="moodys", nome="Moody's", escala="moody", rot=("B", "C", "D"), niv=("L", "M"),
+         evt=("S", "T", "U")),
+    dict(id="sp", nome="S&P", escala="spf", rot=("H", "I", "J"), niv=("P", "Q"),
+         evt=("AG", "AH", "AI")),
+    dict(id="fitch", nome="Fitch", escala="spf", rot=("E", "F", "G"), niv=("N", "O"),
+         evt=("Z", "AA", "AB")),
+]
+NIVEL_GRAU_INVESTIMENTO = 12   # Baa3 / BBB-
+
+
+def serial_para_dia(n):
+    return (datetime.date(1899, 12, 30) + datetime.timedelta(days=int(float(n)))).isoformat()
+
+
+def mudancas(pares):
+    """[(mês, valor)] mensal → só os pontos em que o valor muda (o site repete
+    o último até a mudança seguinte). None marca buraco na série."""
+    saida, ant = [], "\0"
+    for mes, v in pares:
+        if v != ant:
+            saida.append([mes, v])
+            ant = v
+    return saida
+
+
+def le_rating(aba):
+    """Escala de notas, séries mensais por agência (nota em moeda estrangeira e
+    em moeda local) e a lista de ações de rating com a perspectiva de cada uma."""
+    ultima = max(r for (c, r) in aba if c == "A" and eh_numero(aba[(c, r)]))
+    meses = [(r, serial_para_mes(aba[("A", r)])) for r in range(2, ultima + 1) if ("A", r) in aba]
+
+    escala = []
+    for r in range(2, ultima + 1):
+        if not eh_numero(aba.get(("AN", r))):
+            break
+        escala.append([int(float(aba[("AN", r)])), aba[("AO", r)], aba[("AP", r)]])
+
+    def nivel(col, r):
+        v = aba.get((col, r))
+        return int(float(v)) if eh_numero(v) else None
+
+    def rotulo(col, r):
+        v = (aba.get((col, r)) or "").strip()
+        return v if v not in ("", "-", "n/d") else None
+
+    agencias = []
+    for a in AGENCIAS:
+        me = mudancas([(m, nivel(a["niv"][0], r)) for r, m in meses])
+        ml = mudancas([(m, nivel(a["niv"][1], r)) for r, m in meses])
+        persp = mudancas([(m, rotulo(a["rot"][2], r)) for r, m in meses])
+        eventos = []
+        for r in range(2, ultima + 1):
+            d, n, p = (aba.get((c, r)) for c in a["evt"])
+            if not eh_numero(d):
+                continue
+            if eh_numero(n):
+                eventos.append([serial_para_dia(d), int(float(n)), (p or "").strip() or "n/d"])
+        eventos.sort()
+        com_dado = [m for r, m in meses if nivel(a["niv"][0], r) is not None]
+        agencias.append(dict(id=a["id"], nome=a["nome"], escala=a["escala"],
+                             inicio=com_dado[0], fim=com_dado[-1],
+                             me=me, ml=ml, persp=persp, eventos=eventos))
+    return dict(escala=escala, grauInvestimento=NIVEL_GRAU_INVESTIMENTO, agencias=agencias)
+
+
 def eh_numero(txt):
     try:
         float(txt)
@@ -157,6 +232,14 @@ def main():
 
     saida = {"fonte": FONTE_SITE, "atualizado": datetime.date.today().isoformat(), "series": []}
     for col, id_, cfg in INDICADORES:
+        if cfg.get("tipo") == "rating":
+            rt = le_rating(abas[cfg["aba"]])
+            cfg = {k: v for k, v in cfg.items() if k != "aba"}
+            saida["series"].append(dict(id=id_, coluna="aba Base Rating 2", **cfg, **rt, dados=[]))
+            for a in rt["agencias"]:
+                print(f"  {id_:16s} {a['nome']:8s} {a['inicio']} → {a['fim']}  "
+                      f"{len(a['me'])} mudanças (ME), {len(a['eventos'])} ações")
+            continue
         if cfg.get("tipo") == "comparacao":
             cmp = le_comparacao(abas[cfg["aba"]])
             cfg = {k: v for k, v in cfg.items() if k != "aba"}

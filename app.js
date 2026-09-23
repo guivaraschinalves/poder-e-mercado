@@ -46,6 +46,17 @@
     "Lula III":  { dark: "#A9D18E", light: "#4E7A2A" }
   };
 
+  // Cores do gráfico de rating: as duas notas e as três perspectivas.
+  // As formas seguem o modelo do Excel (triângulo/círculo/losango), para o
+  // gráfico continuar legível impresso em preto e branco.
+  var CORES_RATING = {
+    me:        { dark: "#ffffff", light: "#1d3f79" },
+    ml:        { dark: "#FFC46B", light: "#B45309" },
+    Positiva:  { dark: "#5fdc82", light: "#0f7a37" },
+    "Estável": { dark: "#d9e2e8", light: "#5a6772" },
+    Negativa:  { dark: "#ff8a8a", light: "#c02a2a" }
+  };
+
   var LAYOUTS = {
     wide: {
       W: 1920, H: 1080, y0: 214, y1: 928,
@@ -112,7 +123,16 @@
     return n;
   }
   function ehComparacao(s) { return s.tipo === "comparacao"; }
-  function temDados(s) { return ehComparacao(s) ? !!(s.mandatos && s.mandatos.length) : !!s.dados.length; }
+  function ehRating(s) { return s.tipo === "rating"; }
+  function temDados(s) {
+    if (ehComparacao(s)) return !!(s.mandatos && s.mandatos.length);
+    if (ehRating(s)) return !!(s.agencias && s.agencias.length);
+    return !!s.dados.length;
+  }
+  function agenciaDe(cartao) {
+    var as = cartao.serie.agencias;
+    return as.filter(function (a) { return a.id === cartao.agencia; })[0] || as[0];
+  }
 
   function tema() { return document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark"; }
 
@@ -634,6 +654,287 @@
     alvo.addEventListener("pointerleave", limpar);
   }
 
+  /* Rating soberano: uma agência por vez (o cartão tem o seletor). Eixo Y em
+   * degraus de nota, iguais para as três agências — o que muda é o rótulo
+   * (Moody's usa Ba1; S&P e Fitch, BB+). A linha cheia é a nota em moeda
+   * estrangeira e a tracejada, em moeda local; cada marcador é uma ação de
+   * rating, com a forma e a cor da perspectiva anunciada. */
+  function construirRating(cartao, L0, nomeTema) {
+    var s = cartao.serie, pal = PALETAS[nomeTema], ag = agenciaDe(cartao);
+    var col = ag.escala === "moody" ? 1 : 2;
+    var niveis = s.escala.map(function (e) { return e[0]; });
+    var nMin = Math.min.apply(null, niveis) - 0.5, nMax = Math.max.apply(null, niveis) + 0.5;
+    var rotulo = {};
+    s.escala.forEach(function (e) { rotulo[e[0]] = e[col]; });
+
+    var d0 = idxMes(ag.inicio), d1 = idxMes(ag.fim) + 1;
+    var me = expandirMudancas(ag.me, d0, d1);
+    var ml = expandirMudancas(ag.ml, d0, d1);
+    var persp = expandirMudancas(ag.persp, d0, d1);
+    var ultimo = me[me.length - 1];
+    var rotSelo = rotulo[ultimo] + (persp[persp.length - 1] ? " · " + persp[persp.length - 1] : "");
+
+    var fsY = Math.min(L0.tick, (L0.y1 - L0.y0) / (nMax - nMin) * 0.62);
+    var tw = Math.max.apply(null, s.escala.map(function (e) { return largura(e[col], fsY); }));
+    var sw = largura(rotSelo, L0.selo, "bold") + 28;
+    var L = Object.assign({}, L0, { x0: 26 + tw + 14, x1: L0.W - (26 + sw + 14) });
+    var pw = L.x1 - L.x0, ph = L.y1 - L.y0;
+    var X = function (i) { return L.x0 + (i - d0) / (d1 - d0) * pw; };
+    var Y = function (n) { return L.y1 - (n - nMin) / (nMax - nMin) * ph; };
+
+    var svg = el("svg", {
+      xmlns: NS, viewBox: "0 0 " + L.W + " " + L.H, width: L.W, height: L.H,
+      role: "img", "aria-label": s.titulo + " — " + ag.nome + ", por governo"
+    });
+    var desenhos = [];
+
+    // faixas dos mandatos (sem retrato: o eixo de notas não deixa espaço)
+    var blocos = [];
+    mandatos.forEach(function (m) {
+      var a = Math.max(idxMes(m.inicio), d0), b = Math.min(idxMes(m.fim) + 1, d1);
+      if (b <= a) return;
+      blocos.push({ m: m, a: a, b: b, x0: X(a), x1: X(b), cx: (X(a) + X(b)) / 2 });
+    });
+    blocos.forEach(function (b) {
+      svg.appendChild(el("rect", {
+        x: b.x0, y: L.y0, width: b.x1 - b.x0, height: ph, fill: b.m.cor, "fill-opacity": pal.faixaOp
+      }));
+    });
+    var nomeFs = L.nome.fs;
+    blocos.forEach(function (b, k) {
+      nomeFs = Math.min(nomeFs, (b.cx - 8) * 200 / largura(b.m.nome, 100, "bold"),
+        (L.W - 8 - b.cx) * 200 / largura(b.m.nome, 100, "bold"));
+      var prox = blocos[k + 1];
+      if (prox) {
+        nomeFs = Math.min(nomeFs, (prox.cx - b.cx - 16) * 200 /
+          (largura(b.m.nome, 100, "bold") + largura(prox.m.nome, 100, "bold")));
+      }
+    });
+    if (nomeFs >= L.nome.fs * 0.4) {
+      blocos.forEach(function (b) {
+        svg.appendChild(texto(b.m.nome, {
+          x: b.cx, y: L.nome.y, "font-size": nomeFs, "font-weight": "bold",
+          fill: pal.faixaNome, "text-anchor": "middle"
+        }));
+      });
+    }
+
+    // uma linha de grade por degrau, com o rótulo da nota à esquerda
+    s.escala.forEach(function (e) {
+      var y = Y(e[0]);
+      svg.appendChild(el("line", { x1: L.x0, x2: L.x1, y1: y, y2: y, stroke: pal.grade, "stroke-width": 1.5 }));
+      svg.appendChild(texto(e[col], {
+        x: L.x0 - 16, y: y, "font-size": fsY, fill: pal.eixo, "text-anchor": "end", "dominant-baseline": "central"
+      }));
+    });
+
+    // fronteira do grau de investimento: meio degrau abaixo de Baa3/BBB-
+    var yGI = Y(s.grauInvestimento - 0.5);
+    svg.appendChild(el("line", {
+      x1: L.x0, x2: L.x1, y1: yGI, y2: yGI, stroke: pal.zero, "stroke-width": 2.5, "stroke-dasharray": "10 7"
+    }));
+    svg.appendChild(texto("grau de investimento", {
+      x: L.x0 + 12, y: yGI - fsY * 0.45, "font-size": fsY * 0.92, fill: pal.eixo
+    }));
+
+    // eixo X em anos cheios, de 5 em 5 (ou mais, se apertar)
+    var passoX = 5;
+    while (pw / (d1 - d0) * 12 * passoX < largura("2020", L.xlab) * 1.6) passoX += 5;
+    for (var i = Math.ceil(d0 / (12 * passoX)) * 12 * passoX; i < d1; i += 12 * passoX) {
+      var cx = X(i);
+      svg.appendChild(el("line", { x1: cx, x2: cx, y1: L.y1, y2: L.y1 + 8, stroke: pal.zero, "stroke-width": 1.5 }));
+      svg.appendChild(texto(String(Math.floor(i / 12)), {
+        x: cx, y: L.y1 + 12 + L.xlab * 0.85, "font-size": L.xlab, fill: pal.eixo, "text-anchor": "middle"
+      }));
+    }
+
+    // as duas notas, em escada (a nota vale até a mudança seguinte)
+    var corME = CORES_RATING.me[nomeTema], corML = CORES_RATING.ml[nomeTema];
+    svg.appendChild(el("path", {
+      d: escada(ml, d0, X, Y), fill: "none", stroke: corML, "stroke-width": L.linha * 0.7,
+      "stroke-dasharray": (L.linha * 2.2).toFixed(0) + " " + (L.linha * 1.5).toFixed(0), "stroke-linecap": "butt"
+    }));
+    svg.appendChild(el("path", {
+      d: escada(me, d0, X, Y), fill: "none", stroke: corME, "stroke-width": L.linha,
+      "stroke-linejoin": "round", "stroke-linecap": "butt"
+    }));
+
+    // ações de rating: um marcador por anúncio, com a forma da perspectiva
+    ag.eventos.forEach(function (ev) {
+      var cor = CORES_RATING[ev[2]];
+      if (!cor) return;   // ações antigas, sem perspectiva divulgada
+      svg.appendChild(marcaRating(ev[2], X(idxDia(ev[0])), Y(ev[1]), L.linha * 1.15, cor[nomeTema], pal.bg));
+    });
+
+    // selo com a nota atual
+    var seloH = L.selo * 1.55, seloY = Math.min(Math.max(Y(ultimo), L.y0 + seloH / 2), L.y1 - seloH / 2);
+    var bx = L.W - 26 - sw;
+    svg.appendChild(el("line", { x1: X(d1), y1: Y(ultimo), x2: bx, y2: seloY, stroke: pal.suave, "stroke-width": 1.5 }));
+    svg.appendChild(el("rect", { x: bx, y: seloY - seloH / 2, width: sw, height: seloH, rx: 5, fill: pal.selo }));
+    svg.appendChild(texto(rotSelo, {
+      x: bx + sw / 2, y: seloY, "font-size": L.selo, "font-weight": "bold", fill: pal.seloTexto,
+      "text-anchor": "middle", "dominant-baseline": "central"
+    }));
+
+    // legenda (embaixo): as duas linhas e as três perspectivas
+    var itens = [
+      { forma: "linha", cor: corME, txt: "Moeda estrangeira" },
+      { forma: "tracejada", cor: corML, txt: "Moeda local" },
+      { forma: "Positiva", cor: CORES_RATING.Positiva[nomeTema], txt: "Perspectiva positiva" },
+      { forma: "Estável", cor: CORES_RATING["Estável"][nomeTema], txt: "estável" },
+      { forma: "Negativa", cor: CORES_RATING.Negativa[nomeTema], txt: "negativa" }
+    ];
+    var yRot = L.y1 + 12 + L.xlab * 0.85;
+    var espaco = L.fonte.y - L.fonte.fs * 1.5 - yRot - L.xlab * 0.5;
+    var fsLeg = L.xlab * 0.92, filas;
+    while (true) {
+      filas = repartir(itens, pw, fsLeg);
+      if (filas.length * fsLeg * 1.5 <= espaco || fsLeg < L.xlab * 0.5) break;
+      fsLeg *= 0.9;
+    }
+    filas.forEach(function (fila, k) {
+      var x = L.x0, y = yRot + L.xlab * 0.5 + fsLeg * (1.1 + k * 1.5);
+      fila.forEach(function (it) {
+        if (it.forma === "linha" || it.forma === "tracejada") {
+          svg.appendChild(el("line", {
+            x1: x, x2: x + fsLeg * 1.5, y1: y - fsLeg * 0.3, y2: y - fsLeg * 0.3, stroke: it.cor,
+            "stroke-width": fsLeg * 0.22, "stroke-dasharray": it.forma === "tracejada" ? "7 5" : null
+          }));
+        } else {
+          svg.appendChild(marcaRating(it.forma, x + fsLeg * 0.75, y - fsLeg * 0.3, fsLeg * 0.38, it.cor, pal.bg));
+        }
+        svg.appendChild(texto(it.txt, { x: x + fsLeg * 1.9, y: y, "font-size": fsLeg, fill: pal.suave }));
+        x += it.w + fsLeg * 1.6;
+      });
+    });
+
+    svg.appendChild(texto(s.titulo, {
+      x: L.titulo.x, y: L.titulo.y, "font-weight": "bold", fill: pal.texto,
+      "font-size": corpoQueCabe(s.titulo, L.titulo.fs, L.tituloMax, "bold")
+    }));
+    var sub = ag.nome + " · " + s.subtitulo;
+    svg.appendChild(texto(sub, {
+      x: L.sub.x, y: L.sub.y, "font-size": corpoQueCabe(sub, L.sub.fs, L.tituloMax), fill: pal.suave
+    }));
+    svg.appendChild(texto("Fonte: " + (s.fonte || meta.fonte) + ".", {
+      x: L.fonte.x, y: L.fonte.y, "font-size": L.fonte.fs, fill: pal.suave, "text-anchor": "end"
+    }));
+    desenhos.push({ src: pal.logo, x: L.logo.x, y: L.logo.y, w: L.logo.w, h: L.logo.w * LOGO_RAZAO });
+
+    return {
+      svg: svg, L: L, pal: pal, X: X, Y: Y, d0: d0, d1: d1, ag: ag, rotulo: rotulo,
+      me: me, ml: ml, persp: persp, blocos: blocos, desenhos: desenhos
+    };
+  }
+
+  // [mês, valor] só nas mudanças → um valor por mês (o último vale até a mudança seguinte)
+  function expandirMudancas(mud, d0, d1) {
+    var fora = [], v = null, k = 0;
+    for (var i = d0; i < d1; i++) {
+      while (k < mud.length && idxMes(mud[k][0]) <= i) { v = mud[k][1]; k++; }
+      fora.push(v);
+    }
+    return fora;
+  }
+  // caminho em escada, quebrado nos meses sem nota
+  function escada(vals, d0, X, Y) {
+    var d = "", aberto = false;
+    for (var k = 0; k < vals.length; k++) {
+      var v = vals[k];
+      if (v === null || v === undefined) { aberto = false; continue; }
+      var fim = k;
+      while (fim + 1 < vals.length && vals[fim + 1] === v) fim++;
+      d += (aberto ? "L" : "M") + X(d0 + k).toFixed(1) + " " + Y(v).toFixed(1) +
+           "L" + X(d0 + fim + 1).toFixed(1) + " " + Y(v).toFixed(1);
+      aberto = true;
+      k = fim;
+    }
+    return d;
+  }
+  // "1995-06-19" → índice de mês com a fração do dia (para o marcador cair no dia certo)
+  function idxDia(iso) {
+    var p = iso.split("-");
+    var dias = new Date(+p[0], +p[1], 0).getDate();
+    return (+p[0]) * 12 + (+p[1] - 1) + (+p[2] - 0.5) / dias;
+  }
+  function marcaRating(forma, cx, cy, r, cor, fundo) {
+    var at = { fill: cor, stroke: fundo, "stroke-width": r * 0.28 };
+    if (forma === "Positiva") {
+      return el("polygon", Object.assign({ points:
+        [cx, cy - r * 1.2, cx + r * 1.15, cy + r * 0.85, cx - r * 1.15, cy + r * 0.85].join(" ") }, at));
+    }
+    if (forma === "Negativa") {
+      return el("polygon", Object.assign({ points:
+        [cx, cy - r * 1.3, cx + r * 1.1, cy, cx, cy + r * 1.3, cx - r * 1.1, cy].join(" ") }, at));
+    }
+    return el("circle", Object.assign({ cx: cx, cy: cy, r: r }, at));
+  }
+  // quebra a legenda em filas que caibam na largura do gráfico
+  function repartir(itens, largMax, fs) {
+    var filas = [[]], usado = 0;
+    itens.forEach(function (it) {
+      it.w = fs * 1.9 + largura(it.txt, fs);
+      if (usado && usado + fs * 1.6 + it.w > largMax) { filas.push([]); usado = 0; }
+      filas[filas.length - 1].push(it);
+      usado += (usado ? fs * 1.6 : 0) + it.w;
+    });
+    return filas;
+  }
+
+  // passar o mouse no gráfico de rating: nota nas duas moedas, perspectiva e governo
+  function ligarHoverRating(cartao, g) {
+    var svg = g.svg, L = g.L, pal = g.pal;
+    var camada = el("g", { "pointer-events": "none", "class": "hover" });
+    var alvo = el("rect", { x: L.x0, y: L.y0, width: L.x1 - L.x0, height: L.y1 - L.y0, fill: "transparent" });
+    svg.appendChild(alvo);
+    svg.appendChild(camada);
+
+    function limpar() { while (camada.firstChild) camada.removeChild(camada.firstChild); }
+    function mover(ev) {
+      var pt = svg.createSVGPoint();
+      pt.x = ev.clientX; pt.y = ev.clientY;
+      var p = pt.matrixTransform(svg.getScreenCTM().inverse());
+      var i = Math.floor(g.d0 + (p.x - L.x0) / (L.x1 - L.x0) * (g.d1 - g.d0));
+      i = Math.max(g.d0, Math.min(g.d1 - 1, i));
+      var k = i - g.d0;
+      limpar();
+      var x = g.X(i + 0.5);
+      camada.appendChild(el("line", {
+        x1: x, x2: x, y1: L.y0, y2: L.y1, stroke: pal.suave, "stroke-width": 1.5, "stroke-dasharray": "6 6"
+      }));
+      var linhas = [{ t: rotuloMesLongo(i), cor: pal.suave }];
+      [["Moeda estrangeira", g.me[k], CORES_RATING.me], ["Moeda local", g.ml[k], CORES_RATING.ml]].forEach(function (c) {
+        if (c[1] === null || c[1] === undefined) return;
+        var cor = c[2][tema()];
+        linhas.push({ t: c[0] + ": " + g.rotulo[c[1]], cor: pal.texto, peso: "bold", ponto: cor });
+        camada.appendChild(el("circle", { cx: x, cy: g.Y(c[1]), r: L.linha * 0.8, fill: cor, stroke: pal.bg, "stroke-width": 2 }));
+      });
+      if (g.persp[k]) linhas.push({ t: "Perspectiva: " + g.persp[k], cor: pal.texto });
+      g.blocos.forEach(function (b) { if (i >= b.a && i < b.b) linhas.push({ t: b.m.nome, cor: pal.suave, ponto: b.m.cor }); });
+
+      var fs = L.tip * 0.85, pad = fs * 0.6;
+      var w = Math.max.apply(null, linhas.map(function (l) {
+        return largura(l.t, fs, l.peso) + (l.ponto ? fs * 0.9 : 0);
+      })) + pad * 2;
+      var h = linhas.length * fs * 1.35 + pad * 1.2;
+      var bx = x + 24; if (bx + w > L.x1 + 40) bx = x - 24 - w;
+      var by = Math.min(L.y0 + 16, L.y1 - h - 16);
+      camada.appendChild(el("rect", {
+        x: bx, y: by, width: w, height: h, rx: 8, fill: pal.tipBg, stroke: pal.tipBorda, "stroke-width": 1.5
+      }));
+      linhas.forEach(function (l, j) {
+        var ty = by + pad * 0.6 + fs * 0.68 + j * fs * 1.35;
+        if (l.ponto) camada.appendChild(el("circle", { cx: bx + pad + fs * 0.25, cy: ty - fs * 0.3, r: fs * 0.26, fill: l.ponto }));
+        camada.appendChild(texto(l.t, {
+          x: bx + pad + (l.ponto ? fs * 0.9 : 0), y: ty, "font-size": fs, "font-weight": l.peso || "normal", fill: l.cor
+        }));
+      });
+    }
+    alvo.addEventListener("pointermove", mover);
+    alvo.addEventListener("pointerdown", mover);
+    alvo.addEventListener("pointerleave", limpar);
+  }
+
   // na tela as imagens entram como <image href>; no PNG elas vão para o canvas
   function imagensNoSvg(g) {
     g.desenhos.forEach(function (im) {
@@ -729,17 +1030,42 @@
     return p ? p.inicio : null;
   }
 
+  // gráfico com botões de "Início:" — o de comparação e o de rating têm os seus
+  function temPeriodos(s) { return !ehComparacao(s) && !ehRating(s); }
+
   function criarCartao(s) {
-    var cartao = { serie: s, periodo: temDados(s) && !ehComparacao(s) ? periodosDisponiveis(s)[0].id : null, inicioIdx: null, chave: null };
+    var cartao = { serie: s, periodo: null, inicioIdx: null, chave: null, agencia: null };
     var vazio = !temDados(s);
-    if (!vazio && !ehComparacao(s)) cartao.inicioIdx = inicioDoPeriodo(s, cartao.periodo);
+    if (!vazio && temPeriodos(s)) {
+      cartao.periodo = periodosDisponiveis(s)[0].id;
+      cartao.inicioIdx = inicioDoPeriodo(s, cartao.periodo);
+    }
+    if (!vazio && ehRating(s)) cartao.agencia = s.agencias[0].id;
 
     var frame = html("div", { "class": "frame" });
     var raiz = html("article", { "class": "card", id: s.id });
     raiz.appendChild(html("h2", { "class": "sr-only", texto: s.titulo + " — " + s.subtitulo }));
 
     var ferramentas = html("div", { "class": "card-tools" });
-    if (!vazio && !ehComparacao(s)) {
+    if (!vazio && ehRating(s)) {
+      var agGrupo = html("div", { "class": "periodos", role: "group", "aria-label": "Agência de rating" });
+      agGrupo.appendChild(html("span", { "class": "periodos-rotulo", texto: "Agência:" }));
+      s.agencias.forEach(function (a) {
+        var b = html("button", {
+          type: "button", texto: a.nome, "data-p": a.id, "aria-pressed": String(a.id === cartao.agencia)
+        });
+        b.addEventListener("click", function () {
+          cartao.agencia = a.id;
+          Array.prototype.forEach.call(agGrupo.querySelectorAll("button"), function (x) {
+            x.setAttribute("aria-pressed", String(x.getAttribute("data-p") === a.id));
+          });
+          desenhar(cartao, true);
+        });
+        agGrupo.appendChild(b);
+      });
+      ferramentas.appendChild(agGrupo);
+    }
+    if (!vazio && temPeriodos(s)) {
       var grupo = html("div", { "class": "periodos", role: "group", "aria-label": "Início do gráfico de " + s.titulo });
       grupo.appendChild(html("span", { "class": "periodos-rotulo", texto: "Início:" }));
       periodosDisponiveis(s).forEach(function (p) {
@@ -778,20 +1104,24 @@
   function desenhar(cartao, forcar) {
     if (!temDados(cartao.serie)) return;
     var nomeLayout = cartao.frame.clientWidth < 700 || window.innerWidth < 700 ? "narrow" : "wide";
-    var chave = nomeLayout + "|" + tema() + "|" + cartao.periodo;
+    var chave = nomeLayout + "|" + tema() + "|" + cartao.periodo + "|" + cartao.agencia;
     if (!forcar && cartao.chave === chave) return;
     cartao.chave = chave;
     var L = LAYOUTS[nomeLayout];
     var g = desenhoDe(cartao, L, tema());
     imagensNoSvg(g);
-    if (ehComparacao(cartao.serie)) ligarHoverComparacao(cartao, g); else ligarHover(cartao, g);
+    if (ehComparacao(cartao.serie)) ligarHoverComparacao(cartao, g);
+    else if (ehRating(cartao.serie)) ligarHoverRating(cartao, g);
+    else ligarHover(cartao, g);
     cartao.frame.style.aspectRatio = L.W + " / " + L.H;
     cartao.frame.innerHTML = "";
     cartao.frame.appendChild(g.svg);
   }
 
   function desenhoDe(cartao, L, nomeTema) {
-    return ehComparacao(cartao.serie) ? construirComparacao(cartao, L, nomeTema) : construir(cartao, L, nomeTema);
+    if (ehComparacao(cartao.serie)) return construirComparacao(cartao, L, nomeTema);
+    if (ehRating(cartao.serie)) return construirRating(cartao, L, nomeTema);
+    return construir(cartao, L, nomeTema);
   }
 
   // ---------- baixar ----------
@@ -866,7 +1196,8 @@
     setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
   }
   function nomeArquivo(cartao, ext, t) {
-    return "poder-e-mercado-" + cartao.serie.id + (t && t.id !== "slide" ? "-" + t.id : "") + "." + ext;
+    return "poder-e-mercado-" + cartao.serie.id + (cartao.agencia ? "-" + cartao.agencia : "") +
+      (t && t.id !== "slide" ? "-" + t.id : "") + "." + ext;
   }
   function carregarImagem(src) {
     return new Promise(function (ok, erro) {
@@ -971,6 +1302,22 @@
         }).join(";"));
       }
       salvar(new Blob(["﻿" + ls.join("\r\n")], { type: "text/csv;charset=utf-8" }), nomeArquivo(cartao, "csv"));
+      return;
+    }
+    if (ehRating(s)) {
+      var ag = agenciaDe(cartao), i0 = idxMes(ag.inicio), i1 = idxMes(ag.fim) + 1;
+      var me = expandirMudancas(ag.me, i0, i1), ml = expandirMudancas(ag.ml, i0, i1);
+      var pp = expandirMudancas(ag.persp, i0, i1), rot = {};
+      s.escala.forEach(function (e) { rot[e[0]] = e[ag.escala === "moody" ? 1 : 2]; });
+      var lr = ["mes;nota_moeda_estrangeira;nivel;nota_moeda_local;perspectiva;governo"];
+      for (var j = i0; j < i1; j++) {
+        var k = j - i0, gov = "";
+        mandatos.forEach(function (m) { if (j >= idxMes(m.inicio) && j <= idxMes(m.fim)) gov = m.nome; });
+        lr.push([String(Math.floor(j / 12)) + "-" + String(j % 12 + 1).padStart(2, "0"),
+          me[k] === null ? "" : rot[me[k]], me[k] === null ? "" : me[k],
+          ml[k] === null ? "" : rot[ml[k]], pp[k] || "", gov].join(";"));
+      }
+      salvar(new Blob(["\ufeff" + lr.join("\r\n")], { type: "text/csv;charset=utf-8" }), nomeArquivo(cartao, "csv"));
       return;
     }
     var linhas = ["mes;" + s.titulo.replace(/;/g, ",") + " (" + s.subtitulo.replace(/;/g, ",") + ");governo"];

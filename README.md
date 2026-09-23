@@ -13,6 +13,9 @@ variação e a média do período. Site estático, sem build: `index.html` +
   apresentação 16:9 (3840×2160) e Instagram feed 4:5 (2160×2700), feed 3:4
   (2160×2880), quadrado 1:1 (2160×2160) e Stories 9:16 (2160×3840, com o
   gráfico dentro da área segura, longe das barras do app).
+- **Rating soberano** — um cartão só, com botões para ver Moody's, S&P ou
+  Fitch, a nota em moeda estrangeira e em moeda local, cada ação de rating
+  marcada com a perspectiva anunciada e a linha do grau de investimento.
 - **Início** — FHC I, FHC II, Lula I, Lula II, Dilma I, Dilma II, Temer,
   Bolsonaro, Lula III: o gráfico começa no primeiro mês do mandato escolhido
   (só aparecem os mandatos em que a série tem dados). No IPCA, "FHC I" começa
@@ -25,12 +28,12 @@ variação e a média do período. Site estático, sem build: `index.html` +
 
 ## Como atualizar os dados
 
-Os dados vêm do Excel `Presidentes da República.xlsx` (abas *Outros
-Indicadores* e *Presidentes*). O Excel **não** é publicado — só os JSON
-gerados a partir dele:
+Os dados vêm do Excel `dados/Presidentes da República.xlsx` (abas *Outros
+Indicadores*, *Presidentes*, *Dívida Bruta* e *Base Rating 2*). O site não lê o
+Excel: lê os JSON gerados a partir dele.
 
 ```bash
-python3 scripts/gerar_dados.py "caminho/Presidentes da República.xlsx"
+python3 scripts/gerar_dados.py "dados/Presidentes da República.xlsx"
 git add dados && git commit -m "Atualiza dados" && git push
 ```
 
@@ -41,8 +44,8 @@ O script usa só a biblioteca padrão do Python (não precisa instalar nada).
 | `dados/indicadores.json` | Uma série mensal por coluna da aba *Outros Indicadores* |
 | `dados/mandatos.json` | Início, fim e cor de cada governo (aba *Presidentes*) |
 
-Uma série sem nenhum valor na coluna (hoje **Dívida Líquida** e **Dívida
-Bruta**) aparece como cartão "sem dados ainda" — basta preencher a coluna e
+Uma série sem nenhum valor na coluna (hoje **Dívida Líquida**) aparece como
+cartão "sem dados ainda" — basta preencher a coluna e
 rodar o script de novo.
 
 ### Δ e Média de cada mandato
@@ -96,6 +99,32 @@ definitiva).
 Para trocar o gráfico por outra tabela nesse formato, aponte `aba` no
 `INDICADORES` para a aba desejada: a função procura o rótulo "Início do
 mandato" mais à direita e lê a tabela que estiver depois dele.
+
+### Rating soberano
+
+Vem da aba **"Base Rating 2"**, lida por `le_rating`, e ocupa um cartão só, com
+botões para trocar de agência (Moody's, S&P e Fitch). Da aba saem três coisas:
+
+* a **escala** (colunas AN–AP): nível 4 a 16, com o rótulo da Moody's (`Caa2`…`A2`)
+  e o da S&P/Fitch (`CCC`…`A`). O grau de investimento começa no nível 12
+  (Baa3 / BBB-), e é ele que a linha tracejada marca no gráfico;
+* as **séries mensais** de cada agência — nota em moeda estrangeira (linha cheia)
+  e em moeda local (tracejada). No JSON só vão os meses em que a nota muda: o
+  site repete a última até a mudança seguinte, e `null` marca mês sem nota
+  (a Fitch tem alguns buracos na nota em moeda local em 2000 e 2002);
+* as **ações de rating** (colunas S–U, Z–AB e AG–AI): data do anúncio, nível e
+  perspectiva. Cada uma vira um marcador em cima da linha — triângulo verde
+  (positiva), círculo cinza (estável) e losango vermelho (negativa). As ações
+  antigas sem perspectiva divulgada (as seis primeiras da Fitch e a primeira da
+  Moody's) ficam sem marcador, como no modelo do Excel.
+
+Os dados são os da planilha, sem ajuste. Vale notar que ela traz a Moody's em
+moeda local abaixo da nota em moeda estrangeira entre set/1998 e set/2000
+(Caa1 contra B2) — se isso for erro de digitação, corrija na aba e rode o script
+de novo.
+
+O CSV desse cartão sai com um mês por linha: nota nas duas moedas, nível,
+perspectiva e governo.
 
 ### Governos
 
