@@ -54,7 +54,8 @@
     ml:        { dark: "#FFC46B", light: "#B45309" },
     Positiva:  { dark: "#5fdc82", light: "#0f7a37" },
     "Estável": { dark: "#d9e2e8", light: "#5a6772" },
-    Negativa:  { dark: "#ff8a8a", light: "#c02a2a" }
+    Negativa:  { dark: "#ff8a8a", light: "#c02a2a" },
+    grauInv:   { dark: "#6FE39B", light: "#0E7C3A" }
   };
 
   var LAYOUTS = {
@@ -732,14 +733,14 @@
     });
 
     // fronteira do grau de investimento: meio degrau abaixo de Baa3/BBB-
-    var yGI = Y(s.grauInvestimento - 0.5), passoY = ph / (nMax - nMin);
+    // em cima do degrau Baa3 / BBB-, que é o mais baixo do grau de investimento
+    var yGI = Y(s.grauInvestimento), passoY = ph / (nMax - nMin), corGI = CORES_RATING.grauInv[nomeTema];
     svg.appendChild(el("line", {
-      x1: L.x0, x2: L.x1, y1: yGI, y2: yGI, stroke: pal.zero, "stroke-width": 2.5, "stroke-dasharray": "10 7"
+      x1: L.x0, x2: L.x1, y1: yGI, y2: yGI, stroke: corGI, "stroke-width": 3, "stroke-dasharray": "11 7"
     }));
-    // o rótulo fica no vão entre a linha e o degrau de cima, sem cruzar a grade
-    var fsGI = Math.min(fsY * 0.8, passoY * 0.38);
+    var fsGI = Math.min(fsY * 0.85, passoY * 0.6);
     svg.appendChild(texto("grau de investimento", {
-      x: L.x0 + 12, y: yGI - fsGI * 0.32, "font-size": fsGI, fill: pal.zero
+      x: L.x0 + 12, y: yGI - fsGI * 0.38, "font-size": fsGI, "font-weight": "bold", fill: corGI
     }));
 
     // eixo X em anos cheios, de 5 em 5 (ou mais, se apertar)
