@@ -16,11 +16,14 @@ variação e a média do período. Site estático, sem build: `index.html` +
 - **Rating soberano** — um cartão só, com botões para ver Moody's, S&P ou
   Fitch, a nota em moeda estrangeira e em moeda local, cada ação de rating
   marcada com a perspectiva anunciada e a linha do grau de investimento.
-- **PIB** — dois cartões com botões de **Conta:** e **Componente:**, que
-  mostram uma conta por vez: a variação real acumulada em 4 trimestres (PIB,
-  consumo das famílias, consumo do governo, formação bruta de capital,
-  exportação e importação) e a participação de cada componente no PIB nominal.
-  A conta escolhida entra no subtítulo, então a imagem baixada diz qual é.
+- **PIB** — dois cartões com botões de **Conta:** e **Componente:**, que ligam
+  e desligam quantas linhas você quiser ao mesmo tempo: a variação real
+  acumulada em 4 trimestres (PIB, consumo das famílias, consumo do governo,
+  formação bruta de capital, exportação e importação) e a participação de cada
+  componente no PIB nominal. Cada componente tem cor fixa, que aparece no
+  botão, na linha, na legenda e no selo do último valor. Com duas linhas ou
+  mais, os retratos e os números do mandato saem (a média de qual linha seria?)
+  e o topo do gráfico vira legenda — as faixas e os nomes dos governos ficam.
 - **Início** — FHC I, FHC II, Lula I, Lula II, Dilma I, Dilma II, Temer,
   Bolsonaro, Lula III: o gráfico começa no primeiro mês do mandato escolhido
   (só aparecem os mandatos em que a série tem dados). No IPCA, "FHC I" começa
@@ -121,13 +124,27 @@ Três acréscimos que não saem da aba *Outros Indicadores*:
   *Dívida Bruta* (a dívida bruta, SGS 4502, dividida pelo PIB de 12 meses,
   SGS 4382), com a data na coluna AJ da mesma aba. São 343 meses, de jan/1998
   a jul/2026. É outro cartão: o antigo continua sendo a comparação entre
-  mandatos, em p.p. acumulados desde a posse;
+  mandatos, em p.p. acumulados desde a posse. O eixo dele começa em 30%
+  (`minEixo`) porque a dívida nunca chegou perto de zero: com o piso em zero, a
+  folga que os retratos exigem no topo empurrava o eixo até 200% e a linha
+  ficava espremida no rodapé;
 - **PIB** — de `dados/PIB Brasil.xlsx`. As duas abas são trimestrais, e o
   trimestre vira o mês em que ele fecha (1996.I → 1996-03). Como a série anda
   de 3 em 3 meses, essas séries levam `buracoMax: 3` no JSON: sem isso o site
   cortaria a linha a cada ponto, porque o corte padrão é de um mês. As contas
-  ficam em `OPCOES_PIB`, no script — para tirar ou acrescentar uma, basta mexer
-  nessa lista;
+  ficam em `OPCOES_PIB` e as cores em `COR_PIB`, no script — para tirar,
+  acrescentar ou recolorir uma, basta mexer nessas listas.
+
+  No gráfico de **variação real**, a média de cada mandato é **geométrica**:
+  `(∏(1+g))^(1/n) − 1` sobre as variações em 12 meses dos trimestres do
+  mandato. Taxa de crescimento não se acumula somando — a aritmética
+  superestima, e é a geométrica que responde "qual taxa, repetida, daria o
+  mesmo crescimento composto". Com janelas de 4 trimestres que se sobrepõem ela
+  é uma aproximação do crescimento anualizado do período, não a conta exata
+  (essa exigiria o nível do PIB, não a taxa). O mesmo gráfico **não mostra Δ**:
+  a diferença entre a taxa do primeiro e a do último trimestre compara duas
+  taxas, não dois níveis, e não significa nada. Quem manda nisso são os campos
+  `media="geometrica"` e `semDelta` do indicador;
 - **Juro real longo (NTN-B)** — baixado do CSV aberto do Tesouro Transparente
   (a API da B3 foi desativada e responde 410). É a taxa média entre compra e
   venda no último pregão de cada mês, e **uma linha só**: a NTN-B 2045 até

@@ -137,16 +137,38 @@
   function serieDe(cartao) {
     var base = cartao.serie;
     if (!base.opcoes) return base;
-    var k = cartao.opcao || 0;
+    var ativas = cartao.ativas && cartao.ativas.length ? cartao.ativas : [0];
+    var chave = ativas.slice().sort(function (a, b) { return a - b; }).join(",");
     if (!cartao.montadas) cartao.montadas = {};
-    if (!cartao.montadas[k]) {
-      var o = base.opcoes[k] || base.opcoes[0], fora = {};
+    if (!cartao.montadas[chave]) {
+      var ls = linhasDe(cartao), fora = {};
       for (var a in base) if (a !== "opcoes") fora[a] = base[a];
-      fora.dados = o.dados;
-      fora.subtitulo = o.nome + (base.subtitulo ? " · " + base.subtitulo : "");
-      cartao.montadas[k] = fora;
+      fora.dados = ls[0].dados;
+      fora.subtitulo = (ls.length > 2 ? ls.length + " contas" : ls.map(function (l) { return l.nome; }).join(" e "))
+        + (base.subtitulo ? " · " + base.subtitulo : "");
+      cartao.montadas[chave] = fora;
     }
-    return cartao.montadas[k];
+    return cartao.montadas[chave];
+  }
+
+  // As opções ligadas no cartão (o usuário pode marcar quantas quiser). Sem
+  // opções, o gráfico é a série única de sempre.
+  function linhasDe(cartao) {
+    var base = cartao.serie;
+    if (!base.opcoes) return [{ nome: base.titulo, cor: null, dados: base.dados, id: base.id }];
+    var ativas = (cartao.ativas && cartao.ativas.length ? cartao.ativas : [0]).slice().sort(function (a, b) { return a - b; });
+    return ativas.map(function (k) {
+      var o = base.opcoes[k] || base.opcoes[0];
+      return { nome: o.nome, cor: o.cor, dados: o.dados, id: o.id };
+    });
+  }
+
+  // preto ou branco sobre a cor da linha, conforme o que dá para ler
+  function corLegivel(hex) {
+    var m = /^#([0-9a-fA-F]{6})$/.exec(hex || "");
+    if (!m) return "#ffffff";
+    var n = parseInt(m[1], 16);
+    return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) > 165 ? "#10192b" : "#ffffff";
   }
 
   function agenciaDe(cartao) {
@@ -203,6 +225,16 @@
     var prim = vals[0], ult = vals[vals.length - 1];
     var tipo = s.variacao || "abs";
     var delta;
+    /* Taxa de crescimento não se acumula somando: a média do mandato é a
+     * geométrica das variações em 12 meses dos seus trimestres — a taxa que,
+     * repetida, daria o mesmo crescimento composto. E a "variação" de uma taxa
+     * do primeiro ao último trimestre compara duas taxas, não dois níveis: não
+     * significa nada, então esse gráfico não mostra Δ. */
+    if (s.media === "geometrica") {
+      var produto = vals.reduce(function (a, v) { return a * (1 + v); }, 1);
+      return { delta: null, media: "Média: " + fmtValor(s, Math.pow(produto, 1 / vals.length) - 1), sinal: 0 };
+    }
+    if (s.semDelta) return { delta: null, media: "Média: " + fmtValor(s, media), sinal: 0 };
     if (tipo === "soma") {
       // contagem: a média por mês só diz algo com uma casa decimal
       // contagem não tem variação: "Total" fica neutro, sem cor
@@ -249,14 +281,26 @@
   // ---------- desenho do gráfico ----------
   function construir(cartao, L0, nomeTema) {
     var s = serieDe(cartao), pal = PALETAS[nomeTema];
-    var todos = s.dados.map(function (d) { return { i: idxMes(d[0]), v: d[1] }; });
-    var d0 = Math.max(todos[0].i, cartao.inicioIdx === null ? todos[0].i : cartao.inicioIdx);
-    var d1 = todos[todos.length - 1].i + 1;
-    var pts = todos.filter(function (p) { return p.i >= d0; });
-    var vals = pts.map(function (p) { return p.v; });
+    // uma linha (série simples) ou várias (os componentes ligados no cartão)
+    var series = linhasDe(cartao).map(function (ln) {
+      return { ln: ln, cor: ln.cor || pal.linha,
+               todos: ln.dados.map(function (d) { return { i: idxMes(d[0]), v: d[1] }; }) };
+    }).filter(function (S) { return S.todos.length; });
+    var iIni = Math.min.apply(null, series.map(function (S) { return S.todos[0].i; }));
+    var iFim = Math.max.apply(null, series.map(function (S) { return S.todos[S.todos.length - 1].i; }));
+    var d0 = Math.max(iIni, cartao.inicioIdx === null ? iIni : cartao.inicioIdx);
+    var d1 = iFim + 1;
+    var vals = [];
+    series.forEach(function (S) {
+      S.pts = S.todos.filter(function (p) { return p.i >= d0; });
+      S.ult = S.pts[S.pts.length - 1];
+      S.rotSelo = S.ult ? fmtValor(s, S.ult.v) : "";
+      vals = vals.concat(S.pts.map(function (p) { return p.v; }));
+    });
+    series = series.filter(function (S) { return S.pts.length; });
+    var multi = series.length > 1;
+    var pts = series[0].pts, ult = series[0].ult, rotSelo = series[0].rotSelo;
     var barras = s.tipo === "barras";
-    var ult = pts[pts.length - 1];
-    var rotSelo = fmtValor(s, ult.v);
     var fx = L0.faixa;
 
     // As margens laterais dependem da largura dos rótulos do eixo e do selo do
@@ -265,7 +309,9 @@
     // de cada mandato (foto + Δ + média) exige no topo.
     function comEscala(esc, escalaFoto) {
       var tw = Math.max.apply(null, esc.ticks.map(function (t) { return largura(fmtTick(s, t, esc.passo), L0.tick); }));
-      var sw = largura(rotSelo, L0.selo, "bold") + 28;
+      var sw = Math.max.apply(null, series.map(function (S) {
+        return largura(S.rotSelo, L0.selo, "bold");
+      })) + 28;
       var L = Object.assign({}, L0, {
         x0: 26 + tw + 14,
         x1: L0.W - (26 + (L0.eixoDuplo ? Math.max(tw, sw) : sw) + 14)
@@ -288,12 +334,13 @@
         // é centralizado e fica longe. A checagem de colisão logo abaixo cuida
         // do caso em que duas faixas estreitas ficam lado a lado.
         bloco.nome100 = largura(m.nome, 100, "bold");
-        if (dentro.length) {
+        if (dentro.length && !multi) {
           bloco.est = estatisticas(s, dentro.map(function (p) { return p.v; }));
-          bloco.texto100 = Math.max(largura(bloco.est.delta, 100, "bold"), largura(bloco.est.media, 100, "bold"));
+          bloco.texto100 = Math.max(bloco.est.delta ? largura(bloco.est.delta, 100, "bold") : 0,
+                                    largura(bloco.est.media, 100, "bold"));
         }
         var im = imagens[m.foto];
-        if (im && fotoH > 40) {
+        if (!multi && im && fotoH > 40) {
           var fw = fotoH * (im.naturalWidth / im.naturalHeight);
           if (fw > bw - 12) { fw = Math.max(0, bw - 12); }
           if (fw >= 34) {
@@ -341,9 +388,32 @@
         temTexto = temTexto || !!b.est;
       });
       var baseTexto = L.y0 + fx.pad + fotoMax + (fotoMax ? fx.gap : fx.pad);
-      var alturaBloco = (temTexto ? baseTexto + statFs * 2.25 : L.y0 + fx.pad + fotoMax) + 10 - L.y0;
+      var linhasEst = 0;
+      blocos.forEach(function (b) { if (b.est) linhasEst = Math.max(linhasEst, b.est.delta ? 2 : 1); });
+
+      /* Com várias linhas no gráfico, os retratos e os números do mandato saem
+       * (a média de qual linha seria?) e o topo passa a ser a legenda: um traço
+       * da cor e o nome de cada componente, quebrando em mais de uma fila
+       * quando não couber. */
+      var legenda = null;
+      if (multi) {
+        var lfs = Math.min(fx.fs, L.nome.fs), amostra = lfs * 1.4, vao = lfs * 0.45, entre = lfs * 1.3;
+        var filas = [[]], usado = 0, maior = 0;
+        series.forEach(function (S) {
+          var w = amostra + vao + largura(S.ln.nome, lfs, "bold");
+          if (usado > 0 && usado + w > pw - 28) { maior = Math.max(maior, usado - entre); filas.push([]); usado = 0; }
+          filas[filas.length - 1].push({ S: S, x: usado, w: w });
+          usado += w + entre;
+        });
+        maior = Math.max(maior, usado - entre);
+        legenda = { fs: lfs, amostra: amostra, vao: vao, filas: filas, largura: maior };
+      }
+      var alturaBloco = legenda
+        ? fx.pad + legenda.filas.length * legenda.fs * 1.5 + 10
+        : (temTexto ? baseTexto + statFs * (linhasEst > 1 ? 2.25 : 1.1)
+                    : L.y0 + fx.pad + fotoMax) + 10 - L.y0;
       return {
-        L: L, pw: pw, ph: ph, X: X, Y: Y, blocos: blocos,
+        L: L, pw: pw, ph: ph, X: X, Y: Y, blocos: blocos, legenda: legenda,
         alturaBloco: alturaBloco, baseTexto: baseTexto, sw: sw, esc: esc
       };
     }
@@ -359,12 +429,19 @@
     [1, 0.85, 0.7, 0.55, 0.4].some(function (escalaFoto) {
       var g = comEscala(natural, escalaFoto);
       var pico = -Infinity;
-      g.blocos.forEach(function (b) {
-        pts.forEach(function (p) {
-          var x = g.X(p.i + 0.5);
-          if (x >= b.ocupa[0] && x <= b.ocupa[1] && p.v > pico) pico = p.v;
+      if (g.legenda) {
+        var xLeg = g.L.x0 + 14 + g.legenda.largura;
+        series.forEach(function (S) {
+          S.pts.forEach(function (p) { if (g.X(p.i + 0.5) <= xLeg && p.v > pico) pico = p.v; });
         });
-      });
+      } else {
+        g.blocos.forEach(function (b) {
+          pts.forEach(function (p) {
+            var x = g.X(p.i + 0.5);
+            if (x >= b.ocupa[0] && x <= b.ocupa[1] && p.v > pico) pico = p.v;
+          });
+        });
+      }
       var altoMin = natural.max;
       if (pico > -Infinity) {
         var fracao = 1 - g.alturaBloco / g.ph;
@@ -395,7 +472,18 @@
 
     // grade + rótulos do eixo Y
     var seloH = L.selo * 1.55;
-    var seloY = Math.min(Math.max(Y(ult.v), L.y0), L.y1);
+    // um selo por linha, afastados entre si quando os últimos valores se encostam
+    var selos = series.map(function (S) {
+      return { S: S, y: Math.min(Math.max(Y(S.ult.v), L.y0 + seloH / 2), L.y1 - seloH / 2) };
+    }).sort(function (a, b) { return a.y - b.y; });
+    for (var q = 1; q < selos.length; q++) {
+      if (selos[q].y - selos[q - 1].y < seloH * 1.08) selos[q].y = selos[q - 1].y + seloH * 1.08;
+    }
+    for (var q2 = selos.length - 1; q2 >= 0; q2--) {
+      var teto = q2 === selos.length - 1 ? L.y1 - seloH / 2 : selos[q2 + 1].y - seloH * 1.08;
+      if (selos[q2].y > teto) selos[q2].y = teto;
+    }
+    var seloY = selos[0].y;
     esc.ticks.forEach(function (t) {
       var y = Y(t);
       var ehZero = Math.abs(t) < esc.passo * 1e-6 && esc.min < 0;
@@ -405,7 +493,8 @@
       var rot = fmtTick(s, t, esc.passo);
       var at = { "font-size": L.tick, fill: pal.eixo, "dominant-baseline": "central", y: y };
       svg.appendChild(texto(rot, Object.assign({ x: L.x0 - 16, "text-anchor": "end" }, at)));
-      if (L.eixoDuplo && Math.abs(y - seloY) > seloH / 2 + L.tick * 0.5) {
+      var livre = selos.every(function (sl) { return Math.abs(y - sl.y) > seloH / 2 + L.tick * 0.5; });
+      if (L.eixoDuplo && livre) {
         svg.appendChild(texto(rot, Object.assign({ x: L.x1 + 16, "text-anchor": "start" }, at)));
       }
     });
@@ -441,7 +530,9 @@
       }
       if (b.est) {
         var corDelta = b.est.sinal > 0 ? pal.alta : b.est.sinal < 0 ? pal.baixa : pal.faixaNome;
-        [[b.est.delta, corDelta], [b.est.media, pal.faixaNome]].forEach(function (linha, k) {
+        var partes = b.est.delta ? [[b.est.delta, corDelta], [b.est.media, pal.faixaNome]]
+                                 : [[b.est.media, pal.faixaNome]];
+        partes.forEach(function (linha, k) {
           svg.appendChild(texto(linha[0], {
             x: b.cx, y: g.baseTexto + b.statFs * (0.85 + k * 1.25), "font-size": b.statFs,
             "font-weight": "bold", fill: linha[1], "text-anchor": "middle"
@@ -449,6 +540,25 @@
         });
       }
     });
+
+    // legenda (só quando há mais de uma linha)
+    if (g.legenda) {
+      var lg = g.legenda;
+      lg.filas.forEach(function (fila, k) {
+        var y = L.y0 + fx.pad + lg.fs * (0.9 + k * 1.5);
+        fila.forEach(function (it) {
+          var x = L.x0 + 14 + it.x;
+          svg.appendChild(el("line", {
+            x1: x, x2: x + lg.amostra, y1: y, y2: y, stroke: it.S.cor,
+            "stroke-width": L.linha * 0.9, "stroke-linecap": "round"
+          }));
+          svg.appendChild(texto(it.S.ln.nome, {
+            x: x + lg.amostra + lg.vao, y: y, "font-size": lg.fs, "font-weight": "bold",
+            fill: pal.faixaNome, "dominant-baseline": "central"
+          }));
+        });
+      });
+    }
 
     // série
     if (barras) {
@@ -461,30 +571,36 @@
         }));
       });
     } else {
-      var d = "", ant = null;
-      pts.forEach(function (p) {
-        // série trimestral (PIB) anda de 3 em 3 meses: o corte só vale acima disso
-        d += (ant === null || p.i - ant > (s.buracoMax || 1) ? "M" : "L") + X(p.i + 0.5).toFixed(1) + " " + Y(p.v).toFixed(1);
-        ant = p.i;
+      series.forEach(function (S) {
+        var d = "", ant = null;
+        S.pts.forEach(function (p) {
+          // série trimestral (PIB) anda de 3 em 3 meses: o corte só vale acima disso
+          d += (ant === null || p.i - ant > (s.buracoMax || 1) ? "M" : "L") + X(p.i + 0.5).toFixed(1) + " " + Y(p.v).toFixed(1);
+          ant = p.i;
+        });
+        svg.appendChild(el("path", {
+          d: d, fill: "none", stroke: S.cor, "stroke-width": multi ? L.linha * 0.8 : L.linha,
+          "stroke-linejoin": "round", "stroke-linecap": "round"
+        }));
       });
-      svg.appendChild(el("path", {
-        d: d, fill: "none", stroke: pal.linha, "stroke-width": L.linha,
-        "stroke-linejoin": "round", "stroke-linecap": "round"
-      }));
     }
 
-    // selo com o último valor
+    // selo com o último valor de cada linha
     var bx = L.W - 26 - g.sw;
-    var px = X(ult.i + 0.5), py = Y(ult.v);
-    if (px + 6 < bx) {
-      svg.appendChild(el("line", { x1: px, y1: py, x2: bx, y2: seloY, stroke: pal.suave, "stroke-width": 1.5 }));
-    }
-    if (!barras) svg.appendChild(el("circle", { cx: px, cy: py, r: 8, fill: pal.linha, stroke: pal.bg, "stroke-width": 3 }));
-    svg.appendChild(el("rect", { x: bx, y: seloY - seloH / 2, width: g.sw, height: seloH, rx: 5, fill: pal.selo }));
-    svg.appendChild(texto(rotSelo, {
-      x: bx + g.sw / 2, y: seloY, "font-size": L.selo, "font-weight": "bold", fill: pal.seloTexto,
-      "text-anchor": "middle", "dominant-baseline": "central"
-    }));
+    selos.forEach(function (sl) {
+      var S = sl.S, px = X(S.ult.i + 0.5), py = Y(S.ult.v);
+      var fundo = multi ? S.cor : pal.selo;
+      var tinta = multi ? corLegivel(S.cor) : pal.seloTexto;
+      if (px + 6 < bx) {
+        svg.appendChild(el("line", { x1: px, y1: py, x2: bx, y2: sl.y, stroke: pal.suave, "stroke-width": 1.5 }));
+      }
+      if (!barras) svg.appendChild(el("circle", { cx: px, cy: py, r: 8, fill: S.cor, stroke: pal.bg, "stroke-width": 3 }));
+      svg.appendChild(el("rect", { x: bx, y: sl.y - seloH / 2, width: g.sw, height: seloH, rx: 5, fill: fundo }));
+      svg.appendChild(texto(S.rotSelo, {
+        x: bx + g.sw / 2, y: sl.y, "font-size": L.selo, "font-weight": "bold", fill: tinta,
+        "text-anchor": "middle", "dominant-baseline": "central"
+      }));
+    });
 
     // título, subtítulo e fonte
     svg.appendChild(texto(s.titulo, {
@@ -498,10 +614,13 @@
 
     desenhos.push({ src: pal.logo, x: L.logo.x, y: L.logo.y, w: L.logo.w, h: L.logo.w * LOGO_RAZAO });
 
+    series.forEach(function (S) {
+      S.porIdx = S.pts.reduce(function (o, p) { o[p.i] = p; return o; }, {});
+    });
     return {
       svg: svg, L: L, pal: pal, X: X, Y: Y, d0: d0, d1: d1, pts: pts, blocos: g.blocos,
-      alturaBloco: g.alturaBloco, desenhos: desenhos,
-      porIdx: pts.reduce(function (o, p) { o[p.i] = p; return o; }, {})
+      alturaBloco: g.alturaBloco, desenhos: desenhos, series: series, multi: multi,
+      porIdx: series[0].porIdx
     };
   }
 
@@ -990,34 +1109,54 @@
         ponto = melhor;
       }
       limpar();
-      var x = g.X(ponto.i + 0.5), y = g.Y(ponto.v);
+      var serie = serieDe(cartao);
+      var x = g.X(ponto.i + 0.5);
       camada.appendChild(el("line", {
         x1: x, x2: x, y1: L.y0, y2: L.y1, stroke: pal.suave, "stroke-width": 1.5, "stroke-dasharray": "6 6"
       }));
-      camada.appendChild(el("circle", { cx: x, cy: y, r: 9, fill: pal.linha, stroke: pal.bg, "stroke-width": 3 }));
+
+      // uma bolinha e uma linha na caixa para cada série ligada
+      var itens = [];
+      g.series.forEach(function (S) {
+        var q = S.porIdx[ponto.i];
+        if (!q) return;
+        itens.push({ S: S, q: q });
+        camada.appendChild(el("circle", { cx: x, cy: g.Y(q.v), r: 9, fill: S.cor, stroke: pal.bg, "stroke-width": 3 }));
+      });
 
       var gov = null;
       g.blocos.forEach(function (b) { if (ponto.i >= b.a && ponto.i < b.b) gov = b.m; });
-      var linhas = [rotuloMesLongo(ponto.i), fmtValor(serieDe(cartao), ponto.v)];
-      if (gov) linhas.push(gov.nome);
-      var fs = L.tip, pad = fs * 0.6;
-      var w = Math.max.apply(null, linhas.map(function (t, k) {
-        return largura(t, fs, k === 1 ? "bold" : "normal");
-      })) + pad * 2 + (gov ? fs * 0.7 : 0);
+      var fs = L.tip, pad = fs * 0.6, vao = fs * 0.8;
+      var linhas = [{ txt: rotuloMesLongo(ponto.i), cor: pal.suave }];
+      itens.forEach(function (it) {
+        linhas.push({ txt: g.multi ? it.S.ln.nome : fmtValor(serie, it.q.v),
+                      dir: g.multi ? fmtValor(serie, it.q.v) : null,
+                      cor: g.multi ? pal.texto : pal.texto, ponto: g.multi ? it.S.cor : null, forte: true });
+      });
+      if (gov) linhas.push({ txt: gov.nome, cor: pal.suave, ponto: gov.cor });
+      var w = Math.max.apply(null, linhas.map(function (l) {
+        return largura(l.txt, fs, l.forte ? "bold" : "normal") + (l.ponto ? fs * 0.7 : 0)
+             + (l.dir ? vao + largura(l.dir, fs, "bold") : 0);
+      })) + pad * 2;
       var h = linhas.length * fs * 1.35 + pad * 1.2;
       var bx = x + 24; if (bx + w > L.x1 + 40) bx = x - 24 - w;
       var by = Math.min(L.y0 + g.alturaBloco + 16, L.y1 - h - 16);
       camada.appendChild(el("rect", {
         x: bx, y: by, width: w, height: h, rx: 8, fill: pal.tipBg, stroke: pal.tipBorda, "stroke-width": 1.5
       }));
-      linhas.forEach(function (t, k) {
+      linhas.forEach(function (l, k) {
         var ty = by + pad * 0.6 + fs * 0.68 + k * fs * 1.35;
-        var ehGov = gov && k === 2;
-        if (ehGov) camada.appendChild(el("circle", { cx: bx + pad + fs * 0.22, cy: ty - fs * 0.3, r: fs * 0.24, fill: gov.cor }));
-        camada.appendChild(texto(t, {
-          x: bx + pad + (ehGov ? fs * 0.7 : 0), y: ty, "font-size": fs,
-          "font-weight": k === 1 ? "bold" : "normal", fill: k === 0 || ehGov ? pal.suave : pal.texto
+        if (l.ponto) camada.appendChild(el("circle", { cx: bx + pad + fs * 0.22, cy: ty - fs * 0.3, r: fs * 0.24, fill: l.ponto }));
+        camada.appendChild(texto(l.txt, {
+          x: bx + pad + (l.ponto ? fs * 0.7 : 0), y: ty, "font-size": fs,
+          "font-weight": l.forte && !l.dir ? "bold" : "normal", fill: l.cor
         }));
+        if (l.dir) {
+          camada.appendChild(texto(l.dir, {
+            x: bx + w - pad, y: ty, "font-size": fs, "font-weight": "bold",
+            fill: pal.texto, "text-anchor": "end"
+          }));
+        }
       });
     }
     alvo.addEventListener("pointermove", mover);
@@ -1060,7 +1199,7 @@
   function temPeriodos(s) { return !ehComparacao(s) && !ehRating(s); }
 
   function criarCartao(s) {
-    var cartao = { serie: s, periodo: null, inicioIdx: null, chave: null, agencia: null, opcao: 0 };
+    var cartao = { serie: s, periodo: null, inicioIdx: null, chave: null, agencia: null, ativas: [0] };
     var vazio = !temDados(s);
     if (!vazio && temPeriodos(s)) {
       cartao.periodo = periodosDisponiveis(serieDe(cartao))[0].id;
@@ -1074,17 +1213,24 @@
 
     var ferramentas = html("div", { "class": "card-tools" });
     if (!vazio && s.opcoes) {
-      var opGrupo = html("div", { "class": "periodos", role: "group", "aria-label": "Conta de " + s.titulo });
+      // alternadores: o usuário liga quantos componentes quiser, e pelo menos um
+      // fica sempre ligado
+      var opGrupo = html("div", { "class": "periodos", role: "group",
+                                  "aria-label": "Componentes de " + s.titulo + " (pode marcar vários)" });
       opGrupo.appendChild(html("span", { "class": "periodos-rotulo", texto: s.rotuloOpcoes || "Série:" }));
       s.opcoes.forEach(function (o, k) {
-        var b = html("button", {
-          type: "button", texto: o.nome, "data-p": o.id, "aria-pressed": String(k === cartao.opcao)
-        });
+        var b = html("button", { type: "button", "data-p": o.id, "aria-pressed": String(k === 0) });
+        b.appendChild(html("span", { "class": "ponto", style: o.cor ? "background:" + o.cor : "" }));
+        b.appendChild(html("span", { texto: o.nome }));
         b.addEventListener("click", function () {
-          cartao.opcao = k;
-          Array.prototype.forEach.call(opGrupo.querySelectorAll("button"), function (x) {
-            x.setAttribute("aria-pressed", String(x.getAttribute("data-p") === o.id));
-          });
+          var pos = cartao.ativas.indexOf(k);
+          if (pos >= 0) {
+            if (cartao.ativas.length === 1) return;   // não dá para desligar a última
+            cartao.ativas.splice(pos, 1);
+          } else {
+            cartao.ativas.push(k);
+          }
+          b.setAttribute("aria-pressed", String(cartao.ativas.indexOf(k) >= 0));
           desenhar(cartao, true);
         });
         opGrupo.appendChild(b);
@@ -1148,7 +1294,8 @@
   function desenhar(cartao, forcar) {
     if (!temDados(cartao.serie)) return;
     var nomeLayout = cartao.frame.clientWidth < 700 || window.innerWidth < 700 ? "narrow" : "wide";
-    var chave = nomeLayout + "|" + tema() + "|" + cartao.periodo + "|" + cartao.agencia + "|" + cartao.opcao;
+    var chave = nomeLayout + "|" + tema() + "|" + cartao.periodo + "|" + cartao.agencia +
+                "|" + (cartao.ativas || []).join(",");
     if (!forcar && cartao.chave === chave) return;
     cartao.chave = chave;
     var L = LAYOUTS[nomeLayout];
@@ -1240,7 +1387,8 @@
     setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
   }
   function nomeArquivo(cartao, ext, t) {
-    var op = cartao.serie.opcoes ? "-" + cartao.serie.opcoes[cartao.opcao || 0].id : "";
+    var ls = cartao.serie.opcoes ? linhasDe(cartao) : null;
+    var op = !ls ? "" : "-" + (ls.length > 2 ? ls.length + "-contas" : ls.map(function (l) { return l.id; }).join("-e-"));
     return "poder-e-mercado-" + cartao.serie.id + op + (cartao.agencia ? "-" + cartao.agencia : "") +
       (t && t.id !== "slide" ? "-" + t.id : "") + "." + ext;
   }
@@ -1365,12 +1513,25 @@
       salvar(new Blob(["\ufeff" + lr.join("\r\n")], { type: "text/csv;charset=utf-8" }), nomeArquivo(cartao, "csv"));
       return;
     }
-    var linhas = ["mes;" + s.titulo.replace(/;/g, ",") + " (" + s.subtitulo.replace(/;/g, ",") + ");governo"];
-    s.dados.forEach(function (d) {
-      var i = idxMes(d[0]), gov = "";
+    // uma coluna por linha do gráfico (o cartão do PIB pode ter várias)
+    var ls = linhasDe(cartao);
+    var titulo = s.titulo.replace(/;/g, ",");
+    var cab = ls.length > 1 ? ls.map(function (l) { return l.nome.replace(/;/g, ","); })
+                            : [titulo + " (" + s.subtitulo.replace(/;/g, ",") + ")"];
+    var mapas = ls.map(function (l) {
+      return l.dados.reduce(function (o, d) { o[d[0]] = d[1]; return o; }, {});
+    });
+    var meses = {};
+    ls.forEach(function (l) { l.dados.forEach(function (d) { meses[d[0]] = true; }); });
+    var linhas = ["mes;" + cab.join(";") + ";governo"];
+    Object.keys(meses).sort().forEach(function (mes) {
+      var i = idxMes(mes), gov = "";
       mandatos.forEach(function (m) { if (i >= idxMes(m.inicio) && i <= idxMes(m.fim)) gov = m.nome; });
-      var v = pct ? d[1] * 100 : d[1];
-      linhas.push(d[0] + ";" + String(Math.round(v * 1e6) / 1e6).replace(".", ",") + ";" + gov);
+      linhas.push(mes + ";" + mapas.map(function (mp) {
+        if (mp[mes] === undefined) return "";
+        var v = pct ? mp[mes] * 100 : mp[mes];
+        return String(Math.round(v * 1e6) / 1e6).replace(".", ",");
+      }).join(";") + ";" + gov);
     });
     salvar(new Blob(["﻿" + linhas.join("\r\n")], { type: "text/csv;charset=utf-8" }), nomeArquivo(cartao, "csv"));
   }

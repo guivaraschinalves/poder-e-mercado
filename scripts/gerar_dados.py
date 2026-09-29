@@ -56,16 +56,20 @@ INDICADORES = [
     # dívida/PIB no tempo: coluna AL da aba "Dívida Bruta" (4502 ÷ PIB de 12 meses),
     # com a data na coluna AJ da mesma aba
     ("AL", "divida-pib", dict(titulo="Dívida Bruta do Governo Geral", subtitulo="% do PIB",
-                              formato="pct", casas=2, tipo="linha", variacao="abs",
+                              formato="pct", casas=2, tipo="linha", variacao="abs", minEixo=0.30,
                               aba="Dívida Bruta", colunas=("AJ", "AL"))),
     # comparação entre mandatos: vem da última tabela da aba "Dívida Bruta" (em p.p.)
     ("I", "divida-bruta", dict(titulo="Dívida Bruta do Governo Geral",
                                subtitulo="Variação desde o início do mandato, em p.p. do PIB",
                                formato="pp", casas=1, tipo="comparacao", aba="Dívida Bruta")),
     # PIB: vêm do "PIB Brasil.xlsx", uma conta por vez no site
+    # média geométrica por mandato: a média aritmética de taxas de crescimento não
+    # compõe, e a variação do primeiro ao último trimestre do mandato compara duas
+    # taxas, não dois níveis — não significa nada, então sai
     ("—", "pib-demanda", dict(titulo="PIB pela ótica da demanda",
                               subtitulo="Variação real acumulada em 4 trimestres",
-                              formato="pct", casas=2, tipo="linha", variacao="abs", buracoMax=3,
+                              formato="pct", casas=2, tipo="linha", buracoMax=3,
+                              media="geometrica", semDelta=True,
                               planilha="pib", aba="PIB Var. Real 4t", opcoes="demanda",
                               rotuloOpcoes="Conta:", fonte="IBGE e Liberta")),
     ("—", "pib-participacao", dict(titulo="Composição do PIB",
@@ -256,6 +260,20 @@ TRIMESTRE = {"I": "03", "II": "06", "III": "09", "IV": "12"}
 
 # Uma opção por conta da ótica da demanda / por componente do PIB nominal. O
 # site mostra uma por vez, num botão ao lado do "Início:".
+# Cor de cada componente, a mesma nos dois cartões. None = cor da linha do tema
+# (branca no escuro, azul-escura no claro), reservada para o PIB.
+COR_PIB = {
+    "pib": None,
+    "consumo-familias": "#4CAF50",          # verde
+    "consumo-governo": "#D94F4F",           # vermelho
+    "fbc": "#7FB3E8",                       # azul
+    "fbcf": "#A9CCF0",                      # azul mais claro, irmão do FBC
+    "estoques": "#9A7FD0",                  # roxo
+    "exportacao": "#2E6BC6",                # azul forte
+    "importacao": "#F0913A",                # laranja
+    "exportacoes-liquidas": "#3FA7A0",      # verde-azulado
+}
+
 OPCOES_PIB = {
     "demanda": [("B", "pib", "PIB"), ("C", "consumo-familias", "Consumo das Famílias"),
                 ("D", "consumo-governo", "Consumo do Governo"),
@@ -286,7 +304,7 @@ def le_pib(aba, quais, col_trimestre):
     ultima = max(r for (c, r) in aba)
     opcoes = []
     for col, id_, nome in quais:
-        opcoes.append(dict(id=id_, nome=nome, dados=[]))
+        opcoes.append(dict(id=id_, nome=nome, cor=COR_PIB.get(id_), dados=[]))
     for r in range(1, ultima + 1):
         mes = trimestre_para_mes(aba.get((col_trimestre, r)))
         if not mes or any(not eh_numero(aba.get((c, r))) for c, _, _ in quais):
