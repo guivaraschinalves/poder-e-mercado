@@ -167,11 +167,12 @@ Três acréscimos que não saem da aba *Outros Indicadores*:
   taxas, não dois níveis, e não significa nada. Quem manda nisso são os campos
   `media="geometrica"` e `semDelta` do indicador;
 - **Juro real longo (NTN-B)** — baixado do CSV aberto do Tesouro Transparente
-  (a API da B3 foi desativada e responde 410). É a taxa média entre compra e
-  venda no último pregão de cada mês, e **uma linha só**: a NTN-B 2045 até
-  mai/2012 e a 2050 daí em diante, que é quando a 2050 passou a ser ofertada.
-  Cada trecho tem a sua cor (campo `segmentos` da série, com o mês em que cada
-  papel entra), e uma legendinha ao lado do subtítulo diz qual é qual.
+  (a API da B3 foi desativada e responde 410). É a taxa da **NTN-B 2045**,
+  média entre compra e venda no último pregão de cada mês, de dez/2004 até
+  hoje. O vencimento fica em `VENC_NTNB`, no script. (O `app.js` sabe pintar
+  trechos de uma linha em cores diferentes, pelo campo `segmentos` da série —
+  ficou de quando o gráfico emendava a 2045 com a 2050; hoje nenhuma série
+  usa.)
 
 ### Rating soberano
 

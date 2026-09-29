@@ -87,7 +87,7 @@ INDICADORES = [
     ("L", "ipos", dict(titulo="IPOs na B3", subtitulo="Número de IPOs por mês, a partir de abril de 2004",
                        formato="int", casas=0, tipo="barras", variacao="soma", fonte="B3 e Liberta")),
     # juro real longo: baixado do dado aberto do Tesouro (não vem do Excel)
-    ("—", "ntnb", dict(titulo="Juro real longo", subtitulo="Taxa da NTN-B no último pregão do mês",
+    ("—", "ntnb", dict(titulo="Juro real longo", subtitulo="Taxa da NTN-B 2045 no último pregão do mês",
                        formato="pct", casas=2, tipo="linha", variacao="abs",
                        tesouro=True, fonte="Tesouro Nacional e Liberta")),
     # rating soberano: vem da aba "Base Rating 2", uma agência por vez no site
@@ -337,10 +337,12 @@ CSV_TAXAS = ("https://www.tesourotransparente.gov.br/ckan/dataset/"
              "796d2059-14e9-44e3-80c9-2d9e30b405c1/download/precotaxatesourodireto.csv")
 
 
+VENC_NTNB = "2045"
+
+
 def le_ntnb():
-    """Taxa mensal (último pregão do mês) da NTN-B longa, em fração de 1: a de
-    2045 enquanto a de 2050 não existia, e a de 2050 a partir daí — uma linha
-    só, como pedido. Taxa = média entre compra e venda da manhã."""
+    """Taxa mensal (último pregão do mês) da NTN-B 2045, em fração de 1.
+    Taxa = média entre compra e venda da manhã."""
     import csv
     import io as _io
     import urllib.request
@@ -360,30 +362,21 @@ def le_ntnb():
     with urllib.request.urlopen(req, timeout=300) as r:
         bruto = r.read()
 
-    por_venc = {"2045": {}, "2050": {}}
+    por_mes = {}
     leitor = csv.DictReader(_io.StringIO(bruto.decode("latin-1")), delimiter=";")
     for linha in leitor:
         if linha["Tipo Titulo"].strip() != "Tesouro IPCA+ com Juros Semestrais":
             continue
-        ano = linha["Data Vencimento"][-4:]
-        if ano not in por_venc:
+        if linha["Data Vencimento"][-4:] != VENC_NTNB:
             continue
         d, m, a = linha["Data Base"].split("/")
         taxa = (float(linha["Taxa Compra Manha"].replace(",", "."))
                 + float(linha["Taxa Venda Manha"].replace(",", "."))) / 2
         mes = f"{a}-{m}"
-        atual = por_venc[ano].get(mes)
+        atual = por_mes.get(mes)
         if atual is None or atual[0] < d:          # fica com o último pregão do mês
-            por_venc[ano][mes] = (d, taxa)
-
-    inicio_2050 = min(por_venc["2050"]) if por_venc["2050"] else None
-    meses = sorted(set(por_venc["2045"]) | set(por_venc["2050"]))
-    fora = []
-    for mes in meses:
-        venc = "2050" if inicio_2050 and mes >= inicio_2050 else "2045"
-        if mes in por_venc[venc]:
-            fora.append([mes, round(por_venc[venc][mes][1] / 100, 6)])
-    return fora, inicio_2050
+            por_mes[mes] = (d, taxa)
+    return [[mes, round(por_mes[mes][1] / 100, 6)] for mes in sorted(por_mes)]
 
 
 def eh_numero(txt):
@@ -441,21 +434,15 @@ def main():
             continue
         if cfg.get("tesouro"):
             try:
-                dados, inicio_2050 = le_ntnb()
+                dados = le_ntnb()
                 print(f"  {id_:16s} {len(dados):4d} meses  {dados[0][0]} → {dados[-1][0]}  "
-                      f"(troca para a 2050 em {inicio_2050})")
+                      f"(NTN-B {VENC_NTNB})")
             except Exception as e:
-                dados, inicio_2050 = serie_antiga(id_), None
+                dados = serie_antiga(id_)
                 print(f"  {id_:16s} não baixou ({e}); mantendo os {len(dados)} meses que já estavam no JSON")
             base = {k: v for k, v in cfg.items() if k != "tesouro"}
-            # a linha é uma só, mas muda de papel no meio: cada trecho na sua cor
-            segmentos = []
-            if dados:
-                segmentos.append(dict(nome="NTN-B 2045", de=dados[0][0], cor=None))
-                if inicio_2050:
-                    segmentos.append(dict(nome="NTN-B 2050", de=inicio_2050, cor="#F0913A"))
             saida["series"].append(dict(id=id_, coluna="Tesouro Transparente (NTN-B)",
-                                        **{**base, "fonte": fonte}, segmentos=segmentos, dados=dados))
+                                        **{**base, "fonte": fonte}, dados=dados))
             continue
         if cfg.get("tipo") == "rating":
             rt = le_rating(abas[cfg["aba"]])
