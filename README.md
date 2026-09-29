@@ -16,6 +16,11 @@ variação e a média do período. Site estático, sem build: `index.html` +
 - **Rating soberano** — um cartão só, com botões para ver Moody's, S&P ou
   Fitch, a nota em moeda estrangeira e em moeda local, cada ação de rating
   marcada com a perspectiva anunciada e a linha do grau de investimento.
+- **PIB** — dois cartões com botões de **Conta:** e **Componente:**, que
+  mostram uma conta por vez: a variação real acumulada em 4 trimestres (PIB,
+  consumo das famílias, consumo do governo, formação bruta de capital,
+  exportação e importação) e a participação de cada componente no PIB nominal.
+  A conta escolhida entra no subtítulo, então a imagem baixada diz qual é.
 - **Início** — FHC I, FHC II, Lula I, Lula II, Dilma I, Dilma II, Temer,
   Bolsonaro, Lula III: o gráfico começa no primeiro mês do mandato escolhido
   (só aparecem os mandatos em que a série tem dados). No IPCA, "FHC I" começa
@@ -28,25 +33,33 @@ variação e a média do período. Site estático, sem build: `index.html` +
 
 ## Como atualizar os dados
 
-Os dados vêm do Excel `dados/Presidentes da República.xlsx` (abas *Outros
-Indicadores*, *Presidentes*, *Dívida Bruta* e *Base Rating 2*). O site não lê o
-Excel: lê os JSON gerados a partir dele.
+Os dados vêm de dois Excel em `dados/` e de um download:
+
+- `Presidentes da República.xlsx` — abas *Outros Indicadores*, *Presidentes*,
+  *Dívida Bruta* (a série no tempo e a comparação entre mandatos) e
+  *Base Rating 2*;
+- `PIB Brasil.xlsx` — abas *PIB Var. Real 4t* e *PIB Nominal*, trimestrais;
+- a taxa da NTN-B, baixada do dado aberto do Tesouro Transparente.
+
+O site não lê o Excel: lê os JSON gerados a partir dele.
 
 ```bash
-python3 scripts/gerar_dados.py "dados/Presidentes da República.xlsx"
+python3 scripts/gerar_dados.py
 git add dados && git commit -m "Atualiza dados" && git push
 ```
 
-O script usa só a biblioteca padrão do Python (não precisa instalar nada).
+O script usa só a biblioteca padrão do Python (não precisa instalar nada) e
+aceita outro caminho como argumento, se a planilha dos presidentes mudar de
+nome. Se a rede falhar na hora de baixar a NTN-B, ele mantém os meses que já
+estavam no JSON em vez de apagar a série.
 
 | Arquivo | O que tem |
 |---|---|
-| `dados/indicadores.json` | Uma série mensal por coluna da aba *Outros Indicadores* |
+| `dados/indicadores.json` | Uma série por indicador (mensal ou trimestral) |
 | `dados/mandatos.json` | Início, fim e cor de cada governo (aba *Presidentes*) |
 
-Uma série sem nenhum valor na coluna (hoje **Dívida Líquida**) aparece como
-cartão "sem dados ainda" — basta preencher a coluna e
-rodar o script de novo.
+Uma série sem nenhum valor na coluna aparece como cartão "sem dados ainda" —
+basta preencher a coluna e rodar o script de novo. Hoje não há nenhuma.
 
 ### Δ e Média de cada mandato
 
@@ -99,6 +112,26 @@ definitiva).
 Para trocar o gráfico por outra tabela nesse formato, aponte `aba` no
 `INDICADORES` para a aba desejada: a função procura o rótulo "Início do
 mandato" mais à direita e lê a tabela que estiver depois dele.
+
+### PIB, dívida/PIB e juro real longo
+
+Três acréscimos que não saem da aba *Outros Indicadores*:
+
+- **Dívida Bruta do Governo Geral, % do PIB** — coluna **AL** da aba
+  *Dívida Bruta* (a dívida bruta, SGS 4502, dividida pelo PIB de 12 meses,
+  SGS 4382), com a data na coluna AJ da mesma aba. São 343 meses, de jan/1998
+  a jul/2026. É outro cartão: o antigo continua sendo a comparação entre
+  mandatos, em p.p. acumulados desde a posse;
+- **PIB** — de `dados/PIB Brasil.xlsx`. As duas abas são trimestrais, e o
+  trimestre vira o mês em que ele fecha (1996.I → 1996-03). Como a série anda
+  de 3 em 3 meses, essas séries levam `buracoMax: 3` no JSON: sem isso o site
+  cortaria a linha a cada ponto, porque o corte padrão é de um mês. As contas
+  ficam em `OPCOES_PIB`, no script — para tirar ou acrescentar uma, basta mexer
+  nessa lista;
+- **Juro real longo (NTN-B)** — baixado do CSV aberto do Tesouro Transparente
+  (a API da B3 foi desativada e responde 410). É a taxa média entre compra e
+  venda no último pregão de cada mês, e **uma linha só**: a NTN-B 2045 até
+  mai/2012 e a 2050 daí em diante, que é quando a 2050 passou a ser ofertada.
 
 ### Rating soberano
 

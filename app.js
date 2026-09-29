@@ -128,8 +128,27 @@
   function temDados(s) {
     if (ehComparacao(s)) return !!(s.mandatos && s.mandatos.length);
     if (ehRating(s)) return !!(s.agencias && s.agencias.length);
+    if (s.opcoes) return !!(s.opcoes.length && s.opcoes[0].dados.length);
     return !!s.dados.length;
   }
+  /* Cartão com "opções" (as contas do PIB): a série que vale é a base com os
+     dados da opção escolhida, e o nome dela entra no subtítulo — senão a
+     imagem baixada não diz qual conta está na tela. */
+  function serieDe(cartao) {
+    var base = cartao.serie;
+    if (!base.opcoes) return base;
+    var k = cartao.opcao || 0;
+    if (!cartao.montadas) cartao.montadas = {};
+    if (!cartao.montadas[k]) {
+      var o = base.opcoes[k] || base.opcoes[0], fora = {};
+      for (var a in base) if (a !== "opcoes") fora[a] = base[a];
+      fora.dados = o.dados;
+      fora.subtitulo = o.nome + (base.subtitulo ? " · " + base.subtitulo : "");
+      cartao.montadas[k] = fora;
+    }
+    return cartao.montadas[k];
+  }
+
   function agenciaDe(cartao) {
     var as = cartao.serie.agencias;
     return as.filter(function (a) { return a.id === cartao.agencia; })[0] || as[0];
@@ -229,7 +248,7 @@
 
   // ---------- desenho do gráfico ----------
   function construir(cartao, L0, nomeTema) {
-    var s = cartao.serie, pal = PALETAS[nomeTema];
+    var s = serieDe(cartao), pal = PALETAS[nomeTema];
     var todos = s.dados.map(function (d) { return { i: idxMes(d[0]), v: d[1] }; });
     var d0 = Math.max(todos[0].i, cartao.inicioIdx === null ? todos[0].i : cartao.inicioIdx);
     var d1 = todos[todos.length - 1].i + 1;
@@ -444,7 +463,8 @@
     } else {
       var d = "", ant = null;
       pts.forEach(function (p) {
-        d += (ant === null || p.i - ant > 1 ? "M" : "L") + X(p.i + 0.5).toFixed(1) + " " + Y(p.v).toFixed(1);
+        // série trimestral (PIB) anda de 3 em 3 meses: o corte só vale acima disso
+        d += (ant === null || p.i - ant > (s.buracoMax || 1) ? "M" : "L") + X(p.i + 0.5).toFixed(1) + " " + Y(p.v).toFixed(1);
         ant = p.i;
       });
       svg.appendChild(el("path", {
@@ -601,7 +621,7 @@
 
   // passar o mouse no gráfico de comparação: mostra o mês e todos os mandatos
   function ligarHoverComparacao(cartao, g) {
-    var svg = g.svg, L = g.L, pal = g.pal, s = cartao.serie;
+    var svg = g.svg, L = g.L, pal = g.pal, s = serieDe(cartao);
     var camada = el("g", { "pointer-events": "none", "class": "hover" });
     var alvo = el("rect", { x: L.x0, y: L.y0, width: L.x1 - L.x0, height: L.y1 - L.y0, fill: "transparent" });
     svg.appendChild(alvo);
@@ -978,7 +998,7 @@
 
       var gov = null;
       g.blocos.forEach(function (b) { if (ponto.i >= b.a && ponto.i < b.b) gov = b.m; });
-      var linhas = [rotuloMesLongo(ponto.i), fmtValor(cartao.serie, ponto.v)];
+      var linhas = [rotuloMesLongo(ponto.i), fmtValor(serieDe(cartao), ponto.v)];
       if (gov) linhas.push(gov.nome);
       var fs = L.tip, pad = fs * 0.6;
       var w = Math.max.apply(null, linhas.map(function (t, k) {
@@ -1040,11 +1060,11 @@
   function temPeriodos(s) { return !ehComparacao(s) && !ehRating(s); }
 
   function criarCartao(s) {
-    var cartao = { serie: s, periodo: null, inicioIdx: null, chave: null, agencia: null };
+    var cartao = { serie: s, periodo: null, inicioIdx: null, chave: null, agencia: null, opcao: 0 };
     var vazio = !temDados(s);
     if (!vazio && temPeriodos(s)) {
-      cartao.periodo = periodosDisponiveis(s)[0].id;
-      cartao.inicioIdx = inicioDoPeriodo(s, cartao.periodo);
+      cartao.periodo = periodosDisponiveis(serieDe(cartao))[0].id;
+      cartao.inicioIdx = inicioDoPeriodo(serieDe(cartao), cartao.periodo);
     }
     if (!vazio && ehRating(s)) cartao.agencia = s.agencias[0].id;
 
@@ -1053,6 +1073,24 @@
     raiz.appendChild(html("h2", { "class": "sr-only", texto: s.titulo + " — " + s.subtitulo }));
 
     var ferramentas = html("div", { "class": "card-tools" });
+    if (!vazio && s.opcoes) {
+      var opGrupo = html("div", { "class": "periodos", role: "group", "aria-label": "Conta de " + s.titulo });
+      opGrupo.appendChild(html("span", { "class": "periodos-rotulo", texto: s.rotuloOpcoes || "Série:" }));
+      s.opcoes.forEach(function (o, k) {
+        var b = html("button", {
+          type: "button", texto: o.nome, "data-p": o.id, "aria-pressed": String(k === cartao.opcao)
+        });
+        b.addEventListener("click", function () {
+          cartao.opcao = k;
+          Array.prototype.forEach.call(opGrupo.querySelectorAll("button"), function (x) {
+            x.setAttribute("aria-pressed", String(x.getAttribute("data-p") === o.id));
+          });
+          desenhar(cartao, true);
+        });
+        opGrupo.appendChild(b);
+      });
+      ferramentas.appendChild(opGrupo);
+    }
     if (!vazio && ehRating(s)) {
       var agGrupo = html("div", { "class": "periodos", role: "group", "aria-label": "Agência de rating" });
       agGrupo.appendChild(html("span", { "class": "periodos-rotulo", texto: "Agência:" }));
@@ -1074,13 +1112,13 @@
     if (!vazio && temPeriodos(s)) {
       var grupo = html("div", { "class": "periodos", role: "group", "aria-label": "Início do gráfico de " + s.titulo });
       grupo.appendChild(html("span", { "class": "periodos-rotulo", texto: "Início:" }));
-      periodosDisponiveis(s).forEach(function (p) {
+      periodosDisponiveis(serieDe(cartao)).forEach(function (p) {
         var b = html("button", {
           type: "button", texto: p.rot, "data-p": p.id, "aria-pressed": String(p.id === cartao.periodo)
         });
         b.addEventListener("click", function () {
           cartao.periodo = p.id;
-          cartao.inicioIdx = inicioDoPeriodo(s, p.id);
+          cartao.inicioIdx = inicioDoPeriodo(serieDe(cartao), p.id);
           Array.prototype.forEach.call(grupo.querySelectorAll("button"), function (x) {
             x.setAttribute("aria-pressed", String(x.getAttribute("data-p") === p.id));
           });
@@ -1110,7 +1148,7 @@
   function desenhar(cartao, forcar) {
     if (!temDados(cartao.serie)) return;
     var nomeLayout = cartao.frame.clientWidth < 700 || window.innerWidth < 700 ? "narrow" : "wide";
-    var chave = nomeLayout + "|" + tema() + "|" + cartao.periodo + "|" + cartao.agencia;
+    var chave = nomeLayout + "|" + tema() + "|" + cartao.periodo + "|" + cartao.agencia + "|" + cartao.opcao;
     if (!forcar && cartao.chave === chave) return;
     cartao.chave = chave;
     var L = LAYOUTS[nomeLayout];
@@ -1202,7 +1240,8 @@
     setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
   }
   function nomeArquivo(cartao, ext, t) {
-    return "poder-e-mercado-" + cartao.serie.id + (cartao.agencia ? "-" + cartao.agencia : "") +
+    var op = cartao.serie.opcoes ? "-" + cartao.serie.opcoes[cartao.opcao || 0].id : "";
+    return "poder-e-mercado-" + cartao.serie.id + op + (cartao.agencia ? "-" + cartao.agencia : "") +
       (t && t.id !== "slide" ? "-" + t.id : "") + "." + ext;
   }
   function carregarImagem(src) {
@@ -1296,7 +1335,7 @@
   }
 
   function baixarCSV(cartao) {
-    var s = cartao.serie, pct = s.formato === "pct";
+    var s = serieDe(cartao), pct = s.formato === "pct";
     if (ehComparacao(s)) {
       var nomes = s.mandatos.map(function (m) { return m.nome.replace(/;/g, ","); });
       var mMax = Math.max.apply(null, s.mandatos.map(function (m) { return m.dados.length; }));
