@@ -215,14 +215,20 @@
   }
   function comSinal(v, casas) { return (v > 0 ? "+" : v < 0 ? "−" : "") + nf(casas).format(Math.abs(v)); }
 
-  /* Variação e média do mandato. O Δ é do primeiro ao último mês visível da
-   * faixa: em % para índices (Ibovespa e IED), em pontos percentuais para as
-   * séries que já são %, e na própria unidade para o resto. Contagem (IPOs)
-   * não tem variação que signifique algo — mostra o total do período. */
-  function estatisticas(s, vals) {
+  /* Variação e média do mandato. O Δ vai do **último mês do mandato anterior**
+   * ao último mês deste: a posse é em 1º de janeiro, então o que acontece em
+   * janeiro já é do presidente que entrou, e medir do primeiro mês dele em
+   * diante deixaria esse pedaço sem dono. É o mesmo ponto de partida do gráfico
+   * de comparação entre mandatos, onde o mês 0 é o dezembro anterior. Sem mês
+   * anterior (começo da série), vale o primeiro mês da própria faixa.
+   * Em % para índices (Ibovespa e IED), em pontos percentuais para as séries
+   * que já são %, e na própria unidade para o resto. Contagem (IPOs) não tem
+   * variação que signifique algo — mostra o total do período. */
+  function estatisticas(s, vals, anterior) {
     var soma = vals.reduce(function (a, b) { return a + b; }, 0);
     var media = soma / vals.length;
-    var prim = vals[0], ult = vals[vals.length - 1];
+    var prim = anterior === null || anterior === undefined ? vals[0] : anterior;
+    var ult = vals[vals.length - 1];
     var tipo = s.variacao || "abs";
     var delta;
     /* Taxa de crescimento não se acumula somando: a média do mandato é a
@@ -309,6 +315,18 @@
     }
     // o selo e a bolinha seguem a cor da linha nos cartões que têm cor própria
     var corDaLinha = multi || !!cartao.serie.opcoes || !!s.segmentos;
+
+    /* Último valor antes do início de uma faixa — a base do Δ do mandato. Vem
+     * da série inteira, não só do trecho visível: assim o Δ de um mandato não
+     * muda quando se troca o botão de "Início:". */
+    function valorAntesDe(i) {
+      var todos = series[0].todos, achado = null;
+      for (var k = 0; k < todos.length; k++) {
+        if (todos[k].i >= i) break;
+        achado = todos[k].v;
+      }
+      return achado;
+    }
     var barras = s.tipo === "barras";
     var fx = L0.faixa;
 
@@ -344,7 +362,7 @@
         // do caso em que duas faixas estreitas ficam lado a lado.
         bloco.nome100 = largura(m.nome, 100, "bold");
         if (dentro.length && !multi) {
-          bloco.est = estatisticas(s, dentro.map(function (p) { return p.v; }));
+          bloco.est = estatisticas(s, dentro.map(function (p) { return p.v; }), valorAntesDe(a));
           bloco.texto100 = Math.max(bloco.est.delta ? largura(bloco.est.delta, 100, "bold") : 0,
                                     largura(bloco.est.media, 100, "bold"));
         }

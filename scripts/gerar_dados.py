@@ -111,7 +111,7 @@ GOVERNOS = [
     ("dilma", "Dilma I e II", ["Dilma I", "Dilma II"], "#6D3331", "dilma.jpg"),
     ("temer", "Temer", ["Temer"], "#12304E", "temer.jpg"),
     ("bolsonaro", "Bolsonaro", ["Bolsonaro"], "#2E6875", "bolsonaro.jpg"),
-    ("lula3", "Lula", ["Lula III"], "#687634", "lula3.jpg"),
+    ("lula3", "Lula III", ["Lula III"], "#687634", "lula3.jpg"),
 ]
 
 

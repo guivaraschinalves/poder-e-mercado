@@ -70,9 +70,19 @@ basta preencher a coluna e rodar o script de novo. Hoje não há nenhuma.
 
 ### Δ e Média de cada mandato
 
-Calculados na hora de desenhar, sobre os meses **visíveis** da faixa (começando
-no primeiro mandato disponível, é o mandato inteiro). O campo `variacao` em
-`scripts/gerar_dados.py` escolhe a conta:
+Calculados na hora de desenhar. A **média** é dos meses visíveis da faixa. O
+**Δ** vai do **último mês do mandato anterior** até o último mês deste: a posse
+é em 1º de janeiro, então o que acontece em janeiro já é de quem entrou, e medir
+a partir do primeiro mês dele deixaria esse pedaço sem dono. É o mesmo ponto de
+partida do gráfico de comparação entre mandatos, onde o mês 0 é o dezembro
+anterior — e é o que faz os Δ fecharem: na dívida/PIB eles somam +55,2 p.p., que
+é exatamente a distância entre 40,2% em jan/1998 e 95,4% em jul/2026.
+
+A base sai da série inteira, não só do trecho visível, para o Δ de um mandato
+não mudar quando se troca o botão de "Início:". No primeiro mandato da série não
+há mês anterior, e aí o Δ parte do primeiro mês da faixa mesmo.
+
+O campo `variacao` em `scripts/gerar_dados.py` escolhe a conta:
 
 | `variacao` | Δ mostrado | Usado em |
 |---|---|---|
