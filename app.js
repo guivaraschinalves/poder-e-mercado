@@ -1280,6 +1280,99 @@
     if (p && p.catch) p.catch(function () {});
   }
 
+  /* ---------- ordem dos gráficos, escolhida arrastando no menu ----------
+     A ordem fica no navegador (não no JSON), então é de cada leitor. Um
+     indicador novo, que não esteja na lista salva, entra no fim. */
+  var CHAVE_ORDEM = "pm_ordem";
+
+  function ordemSalva() {
+    try {
+      var v = JSON.parse(localStorage.getItem(CHAVE_ORDEM));
+      return Array.isArray(v) ? v : null;
+    } catch (e) { return null; }
+  }
+
+  function naOrdemSalva(series) {
+    var ordem = ordemSalva();
+    if (!ordem) return series;
+    var pos = {};
+    ordem.forEach(function (id, k) { pos[id] = k; });
+    return series.slice().sort(function (a, b) {
+      var pa = pos[a.id] === undefined ? 1e6 + series.indexOf(a) : pos[a.id];
+      var pb = pos[b.id] === undefined ? 1e6 + series.indexOf(b) : pos[b.id];
+      return pa - pb;
+    });
+  }
+
+  function ligarArrasto(nav, host) {
+    var puxado = null;
+
+    // onde soltar: o primeiro link cujo meio está abaixo do ponteiro
+    function antesDe(y) {
+      var itens = Array.prototype.slice.call(nav.querySelectorAll("a:not(.arrastando)"));
+      var melhor = null, menor = Infinity;
+      itens.forEach(function (it) {
+        var r = it.getBoundingClientRect(), d = y - (r.top + r.height / 2);
+        if (d < 0 && -d < menor) { menor = -d; melhor = it; }
+      });
+      return melhor;
+    }
+
+    function aplicar() {
+      var ids = Array.prototype.map.call(nav.querySelectorAll("a"), function (a) { return a.getAttribute("data-id"); });
+      ids.forEach(function (id) {
+        var c = cartoes.filter(function (x) { return x.serie.id === id; })[0];
+        if (c) host.appendChild(c.raiz);   // appendChild move: a ordem vira a do menu
+      });
+      try { localStorage.setItem(CHAVE_ORDEM, JSON.stringify(ids)); } catch (e) {}
+      mostrarReset();
+    }
+
+    nav.addEventListener("dragstart", function (ev) {
+      var a = ev.target.closest ? ev.target.closest("a") : null;
+      if (!a) return;
+      puxado = a;
+      a.classList.add("arrastando");
+      ev.dataTransfer.effectAllowed = "move";
+      try { ev.dataTransfer.setData("text/plain", a.getAttribute("data-id")); } catch (e) {}
+    });
+    nav.addEventListener("dragover", function (ev) {
+      if (!puxado) return;
+      ev.preventDefault();
+      ev.dataTransfer.dropEffect = "move";
+      var alvo = antesDe(ev.clientY);
+      if (alvo) nav.insertBefore(puxado, alvo); else nav.appendChild(puxado);
+    });
+    nav.addEventListener("drop", function (ev) { if (puxado) ev.preventDefault(); });
+    nav.addEventListener("dragend", function () {
+      if (!puxado) return;
+      puxado.classList.remove("arrastando");
+      puxado = null;
+      aplicar();
+    });
+
+    // sem mouse: Alt + seta para cima/baixo move o link que está com o foco
+    nav.addEventListener("keydown", function (ev) {
+      if (!ev.altKey || (ev.key !== "ArrowUp" && ev.key !== "ArrowDown")) return;
+      var a = ev.target.closest ? ev.target.closest("a") : null;
+      if (!a) return;
+      ev.preventDefault();
+      if (ev.key === "ArrowUp" && a.previousElementSibling) nav.insertBefore(a, a.previousElementSibling);
+      if (ev.key === "ArrowDown" && a.nextElementSibling) nav.insertBefore(a.nextElementSibling, a);
+      a.focus();
+      aplicar();
+    });
+
+    var reset = html("button", { type: "button", "class": "nav-reset", texto: "Voltar à ordem original" });
+    reset.addEventListener("click", function () {
+      try { localStorage.removeItem(CHAVE_ORDEM); } catch (e) {}
+      location.reload();
+    });
+    nav.parentNode.insertBefore(reset, nav.nextSibling);
+    function mostrarReset() { reset.hidden = !ordemSalva(); }
+    mostrarReset();
+  }
+
   function criarCartao(s) {
     var cartao = { serie: s, periodo: null, inicioIdx: null, chave: null, agencia: null, ativas: [0] };
     var vazio = !temDados(s);
@@ -1658,11 +1751,12 @@
     }).then(function (series) {
       host.innerHTML = "";
       var nav = document.getElementById("nav");
-      series.forEach(function (s) {
+      naOrdemSalva(series).forEach(function (s) {
         var c = criarCartao(s);
         cartoes.push(c);
         host.appendChild(c.raiz);
-        var a = html("a", { href: "#" + s.id });
+        var a = html("a", { href: "#" + s.id, "data-id": s.id, draggable: "true",
+                            title: "Arraste para mudar a ordem (ou Alt + ↑/↓)" });
         a.appendChild(html("span", { texto: s.titulo }));
         // dois cartões com o mesmo título (a dívida bruta) precisam de uma
         // segunda linha para não virarem dois links iguais no menu
@@ -1673,6 +1767,7 @@
         if (!temDados(s)) a.className = "vazio";
         nav.appendChild(a);
       });
+      ligarArrasto(nav, host);
       cartoes.forEach(function (c) { desenhar(c, true); });
       var d = meta.atualizado.split("-");
       document.getElementById("rodape").textContent =

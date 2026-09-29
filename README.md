@@ -7,7 +7,11 @@ variação e a média do período. Site estático, sem build: `index.html` +
 `app.js` + `styles.css`, com os dados em `dados/`.
 
 - **Menu à esquerda** — a lista de indicadores fica numa barra lateral fixa
-  (no celular ela vira uma fila de atalhos no topo).
+  (no celular ela vira uma fila de atalhos no topo). **Arraste um nome** para
+  mudar a ordem dos gráficos: o cartão acompanha, e a ordem fica salva no
+  navegador de quem está lendo (chave `pm_ordem`), com um botão para voltar à
+  original. Sem mouse, **Alt + ↑/↓** move o link que está com o foco. Um
+  indicador novo, que não esteja na ordem salva, entra no fim da lista.
 - **Tela cheia** — botão em cada gráfico: o quadro vai para a tela inteira pela
   API do navegador e o desenho é refeito no tamanho novo. Esc volta.
 - **Modo escuro/claro** — botão na lateral (o escuro é o padrão e reproduz o
