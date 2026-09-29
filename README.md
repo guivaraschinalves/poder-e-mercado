@@ -6,7 +6,11 @@ Bolsonaro e Lula), com o retrato oficial do presidente e, embaixo dele, a
 variação e a média do período. Site estático, sem build: `index.html` +
 `app.js` + `styles.css`, com os dados em `dados/`.
 
-- **Modo escuro/claro** — botão no topo (o escuro é o padrão e reproduz o
+- **Menu à esquerda** — a lista de indicadores fica numa barra lateral fixa
+  (no celular ela vira uma fila de atalhos no topo).
+- **Tela cheia** — botão em cada gráfico: o quadro vai para a tela inteira pela
+  API do navegador e o desenho é refeito no tamanho novo. Esc volta.
+- **Modo escuro/claro** — botão na lateral (o escuro é o padrão e reproduz o
   visual do gráfico de referência; a escolha fica salva no navegador).
 - **Baixar** — em cada gráfico, no tema da tela, em PNG, JPG, PDF ou SVG
   editável, e o CSV com os dados. Tamanhos (todos em 2×, para sair nítido):
@@ -124,7 +128,10 @@ Três acréscimos que não saem da aba *Outros Indicadores*:
   *Dívida Bruta* (a dívida bruta, SGS 4502, dividida pelo PIB de 12 meses,
   SGS 4382), com a data na coluna AJ da mesma aba. São 343 meses, de jan/1998
   a jul/2026. É outro cartão: o antigo continua sendo a comparação entre
-  mandatos, em p.p. acumulados desde a posse. O eixo dele começa em 30%
+  mandatos, em p.p. acumulados desde a posse. Os dois dizem no subtítulo que a
+  dívida bruta aqui é a da **metodologia do FMI**, que conta os títulos do
+  Tesouro na carteira do Banco Central — é a diferença que faz o número ficar
+  bem acima do que o BC publica na metodologia dele. O eixo dele começa em 30%
   (`minEixo`) porque a dívida nunca chegou perto de zero: com o piso em zero, a
   folga que os retratos exigem no topo empurrava o eixo até 200% e a linha
   ficava espremida no rodapé;
@@ -149,6 +156,8 @@ Três acréscimos que não saem da aba *Outros Indicadores*:
   (a API da B3 foi desativada e responde 410). É a taxa média entre compra e
   venda no último pregão de cada mês, e **uma linha só**: a NTN-B 2045 até
   mai/2012 e a 2050 daí em diante, que é quando a 2050 passou a ser ofertada.
+  Cada trecho tem a sua cor (campo `segmentos` da série, com o mês em que cada
+  papel entra), e uma legendinha ao lado do subtítulo diz qual é qual.
 
 ### Rating soberano
 

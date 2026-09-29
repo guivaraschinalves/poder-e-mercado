@@ -55,12 +55,15 @@ INDICADORES = [
                            tipo="linha", variacao="abs")),
     # dívida/PIB no tempo: coluna AL da aba "Dívida Bruta" (4502 ÷ PIB de 12 meses),
     # com a data na coluna AJ da mesma aba
-    ("AL", "divida-pib", dict(titulo="Dívida Bruta do Governo Geral", subtitulo="% do PIB",
+    ("AL", "divida-pib", dict(titulo="Dívida Bruta do Governo Geral",
+                              subtitulo="% do PIB · metodologia do FMI, que conta os títulos do "
+                                        "Tesouro na carteira do Banco Central",
                               formato="pct", casas=2, tipo="linha", variacao="abs", minEixo=0.30,
                               aba="Dívida Bruta", colunas=("AJ", "AL"))),
     # comparação entre mandatos: vem da última tabela da aba "Dívida Bruta" (em p.p.)
     ("I", "divida-bruta", dict(titulo="Dívida Bruta do Governo Geral",
-                               subtitulo="Variação desde o início do mandato, em p.p. do PIB",
+                               subtitulo="Variação desde o início do mandato, em p.p. do PIB · "
+                                         "metodologia do FMI",
                                formato="pp", casas=1, tipo="comparacao", aba="Dívida Bruta")),
     # PIB: vêm do "PIB Brasil.xlsx", uma conta por vez no site
     # média geométrica por mandato: a média aritmética de taxas de crescimento não
@@ -84,7 +87,7 @@ INDICADORES = [
     ("L", "ipos", dict(titulo="IPOs na B3", subtitulo="Número de IPOs por mês, a partir de abril de 2004",
                        formato="int", casas=0, tipo="barras", variacao="soma", fonte="B3 e Liberta")),
     # juro real longo: baixado do dado aberto do Tesouro (não vem do Excel)
-    ("—", "ntnb", dict(titulo="Juro real longo", subtitulo="Taxa da NTN-B 2045 e, de 2012 em diante, da 2050",
+    ("—", "ntnb", dict(titulo="Juro real longo", subtitulo="Taxa da NTN-B no último pregão do mês",
                        formato="pct", casas=2, tipo="linha", variacao="abs",
                        tesouro=True, fonte="Tesouro Nacional e Liberta")),
     # rating soberano: vem da aba "Base Rating 2", uma agência por vez no site
@@ -442,11 +445,17 @@ def main():
                 print(f"  {id_:16s} {len(dados):4d} meses  {dados[0][0]} → {dados[-1][0]}  "
                       f"(troca para a 2050 em {inicio_2050})")
             except Exception as e:
-                dados = serie_antiga(id_)
+                dados, inicio_2050 = serie_antiga(id_), None
                 print(f"  {id_:16s} não baixou ({e}); mantendo os {len(dados)} meses que já estavam no JSON")
             base = {k: v for k, v in cfg.items() if k != "tesouro"}
+            # a linha é uma só, mas muda de papel no meio: cada trecho na sua cor
+            segmentos = []
+            if dados:
+                segmentos.append(dict(nome="NTN-B 2045", de=dados[0][0], cor=None))
+                if inicio_2050:
+                    segmentos.append(dict(nome="NTN-B 2050", de=inicio_2050, cor="#F0913A"))
             saida["series"].append(dict(id=id_, coluna="Tesouro Transparente (NTN-B)",
-                                        **{**base, "fonte": fonte}, dados=dados))
+                                        **{**base, "fonte": fonte}, segmentos=segmentos, dados=dados))
             continue
         if cfg.get("tipo") == "rating":
             rt = le_rating(abas[cfg["aba"]])

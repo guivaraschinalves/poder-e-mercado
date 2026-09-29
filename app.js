@@ -300,6 +300,15 @@
     series = series.filter(function (S) { return S.pts.length; });
     var multi = series.length > 1;
     var pts = series[0].pts, ult = series[0].ult, rotSelo = series[0].rotSelo;
+    // trechos com cor própria: a NTN-B troca de papel no meio da série
+    function segDe(i) {
+      if (!s.segmentos) return null;
+      var achado = null;
+      s.segmentos.forEach(function (sg) { if (i >= idxMes(sg.de)) achado = sg; });
+      return achado;
+    }
+    // o selo e a bolinha seguem a cor da linha nos cartões que têm cor própria
+    var corDaLinha = multi || !!cartao.serie.opcoes || !!s.segmentos;
     var barras = s.tipo === "barras";
     var fx = L0.faixa;
 
@@ -572,16 +581,29 @@
       });
     } else {
       series.forEach(function (S) {
-        var d = "", ant = null;
+        // um caminho por trecho; o trecho seguinte começa no último ponto do
+        // anterior, para a emenda não virar buraco
+        var grupos = [];
         S.pts.forEach(function (p) {
-          // série trimestral (PIB) anda de 3 em 3 meses: o corte só vale acima disso
-          d += (ant === null || p.i - ant > (s.buracoMax || 1) ? "M" : "L") + X(p.i + 0.5).toFixed(1) + " " + Y(p.v).toFixed(1);
-          ant = p.i;
+          var sg = segDe(p.i);
+          if (!grupos.length || grupos[grupos.length - 1].sg !== sg) grupos.push({ sg: sg, pts: [] });
+          grupos[grupos.length - 1].pts.push(p);
         });
-        svg.appendChild(el("path", {
-          d: d, fill: "none", stroke: S.cor, "stroke-width": multi ? L.linha * 0.8 : L.linha,
-          "stroke-linejoin": "round", "stroke-linecap": "round"
-        }));
+        grupos.forEach(function (gr, k) {
+          var lista = gr.pts.slice(), prox = grupos[k + 1];
+          if (prox && prox.pts.length) lista.push(prox.pts[0]);
+          var d = "", ant = null;
+          lista.forEach(function (p) {
+            // série trimestral (PIB) anda de 3 em 3 meses: o corte só vale acima disso
+            d += (ant === null || p.i - ant > (s.buracoMax || 1) ? "M" : "L") + X(p.i + 0.5).toFixed(1) + " " + Y(p.v).toFixed(1);
+            ant = p.i;
+          });
+          svg.appendChild(el("path", {
+            d: d, fill: "none", stroke: (gr.sg && gr.sg.cor) || S.cor,
+            "stroke-width": multi ? L.linha * 0.8 : L.linha,
+            "stroke-linejoin": "round", "stroke-linecap": "round"
+          }));
+        });
       });
     }
 
@@ -589,12 +611,14 @@
     var bx = L.W - 26 - g.sw;
     selos.forEach(function (sl) {
       var S = sl.S, px = X(S.ult.i + 0.5), py = Y(S.ult.v);
-      var fundo = multi ? S.cor : pal.selo;
-      var tinta = multi ? corLegivel(S.cor) : pal.seloTexto;
+      var sgUlt = segDe(S.ult.i);
+      var cor = (sgUlt && sgUlt.cor) || S.cor;
+      var fundo = corDaLinha ? cor : pal.selo;
+      var tinta = corDaLinha ? corLegivel(cor) : pal.seloTexto;
       if (px + 6 < bx) {
         svg.appendChild(el("line", { x1: px, y1: py, x2: bx, y2: sl.y, stroke: pal.suave, "stroke-width": 1.5 }));
       }
-      if (!barras) svg.appendChild(el("circle", { cx: px, cy: py, r: 8, fill: S.cor, stroke: pal.bg, "stroke-width": 3 }));
+      if (!barras) svg.appendChild(el("circle", { cx: px, cy: py, r: 8, fill: cor, stroke: pal.bg, "stroke-width": 3 }));
       svg.appendChild(el("rect", { x: bx, y: sl.y - seloH / 2, width: g.sw, height: seloH, rx: 5, fill: fundo }));
       svg.appendChild(texto(S.rotSelo, {
         x: bx + g.sw / 2, y: sl.y, "font-size": L.selo, "font-weight": "bold", fill: tinta,
@@ -607,7 +631,31 @@
       x: L.titulo.x, y: L.titulo.y, "font-weight": "bold", fill: pal.texto,
       "font-size": corpoQueCabe(s.titulo, L.titulo.fs, L.tituloMax, "bold")
     }));
-    svg.appendChild(texto(s.subtitulo, { x: L.sub.x, y: L.sub.y, "font-size": L.sub.fs, fill: pal.suave }));
+    // subtítulo encolhe até caber antes do logo (o da dívida bruta é longo)
+    var subFs = corpoQueCabe(s.subtitulo, L.sub.fs, L.logo.x - L.sub.x - 24);
+    svg.appendChild(texto(s.subtitulo, { x: L.sub.x, y: L.sub.y, "font-size": subFs, fill: pal.suave }));
+    if (s.segmentos && s.segmentos.length > 1) {
+      var fsL = Math.min(subFs, L.sub.fs), amostra = fsL * 1.4, vao = fsL * 0.4, entre = fsL * 1.1;
+      var largLeg = s.segmentos.reduce(function (a, sg) {
+        return a + amostra + vao + largura(sg.nome, fsL, "bold") + entre;
+      }, -entre);
+      // ao lado do subtítulo, se couber; senão, na linha de baixo
+      var xL = L.sub.x + largura(s.subtitulo, subFs) + fsL * 1.4, yL = L.sub.y;
+      if (xL + largLeg > L.logo.x - 16) { xL = L.sub.x; yL = L.sub.y + fsL * 1.2; }
+      if (yL + fsL * 0.4 < L.nome.y - L.nome.fs * 0.75) {
+        s.segmentos.forEach(function (sg) {
+          var c = sg.cor || pal.linha;
+          svg.appendChild(el("line", {
+            x1: xL, x2: xL + amostra, y1: yL - fsL * 0.3, y2: yL - fsL * 0.3,
+            stroke: c, "stroke-width": L.linha * 0.8, "stroke-linecap": "round"
+          }));
+          svg.appendChild(texto(sg.nome, {
+            x: xL + amostra + vao, y: yL, "font-size": fsL, "font-weight": "bold", fill: pal.texto
+          }));
+          xL += amostra + vao + largura(sg.nome, fsL, "bold") + entre;
+        });
+      }
+    }
     svg.appendChild(texto("Fonte: " + (s.fonte || meta.fonte) + ".", {
       x: L.fonte.x, y: L.fonte.y, "font-size": L.fonte.fs, fill: pal.suave, "text-anchor": "end"
     }));
@@ -1198,6 +1246,22 @@
   // gráfico com botões de "Início:" — o de comparação e o de rating têm os seus
   function temPeriodos(s) { return !ehComparacao(s) && !ehRating(s); }
 
+  /* Tela cheia de um gráfico só, pela API do navegador. O quadro do gráfico é
+     que vai para a tela inteira; o CSS centraliza o SVG e o desenho é refeito,
+     porque o layout (largo ou em pé) depende da largura do quadro. */
+  function elTelaCheia() { return document.fullscreenElement || document.webkitFullscreenElement || null; }
+  function alternarTelaCheia(no) {
+    if (elTelaCheia()) {
+      var f = document.exitFullscreen || document.webkitExitFullscreen;
+      if (f) f.call(document);
+      return;
+    }
+    var pedir = no.requestFullscreen || no.webkitRequestFullscreen;
+    if (!pedir) return;
+    var p = pedir.call(no);
+    if (p && p.catch) p.catch(function () {});
+  }
+
   function criarCartao(s) {
     var cartao = { serie: s, periodo: null, inicioIdx: null, chave: null, agencia: null, ativas: [0] };
     var vazio = !temDados(s);
@@ -1274,7 +1338,17 @@
       });
       ferramentas.appendChild(grupo);
     }
-    if (!vazio) ferramentas.appendChild(menuBaixar(cartao));
+    if (!vazio) {
+      var acoes = html("div", { "class": "card-acoes" });
+      var btnTela = html("button", { type: "button", "class": "btn", title: "Ver este gráfico em tela cheia" });
+      btnTela.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" ' +
+        'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+        '<path d="M3 9V3h6M21 9V3h-6M3 15v6h6M21 15v6h-6"/></svg><span>Tela cheia</span>';
+      btnTela.addEventListener("click", function () { alternarTelaCheia(cartao.frame); });
+      acoes.appendChild(btnTela);
+      acoes.appendChild(menuBaixar(cartao));
+      ferramentas.appendChild(acoes);
+    }
     raiz.appendChild(ferramentas);
     raiz.appendChild(frame);
 
@@ -1565,14 +1639,21 @@
       })).then(function () { return r[0].series; });
     }).then(function (series) {
       host.innerHTML = "";
-      var chips = document.getElementById("chips");
+      var nav = document.getElementById("nav");
       series.forEach(function (s) {
         var c = criarCartao(s);
         cartoes.push(c);
         host.appendChild(c.raiz);
-        var a = html("a", { href: "#" + s.id, texto: s.titulo });
+        var a = html("a", { href: "#" + s.id });
+        a.appendChild(html("span", { texto: s.titulo }));
+        // dois cartões com o mesmo título (a dívida bruta) precisam de uma
+        // segunda linha para não virarem dois links iguais no menu
+        var repetido = series.filter(function (o) { return o.titulo === s.titulo; }).length > 1;
+        if (repetido && s.subtitulo) {
+          a.appendChild(html("span", { "class": "quem", texto: s.subtitulo.split("·")[0].trim() }));
+        }
         if (!temDados(s)) a.className = "vazio";
-        chips.appendChild(a);
+        nav.appendChild(a);
       });
       cartoes.forEach(function (c) { desenhar(c, true); });
       var d = meta.atualizado.split("-");
@@ -1584,6 +1665,12 @@
     });
 
     document.getElementById("tema").addEventListener("click", alternarTema);
+    // entrar ou sair da tela cheia muda a largura do quadro: redesenha
+    ["fullscreenchange", "webkitfullscreenchange"].forEach(function (t) {
+      document.addEventListener(t, function () {
+        setTimeout(function () { cartoes.forEach(function (c) { desenhar(c, true); }); }, 60);
+      });
+    });
     var espera;
     window.addEventListener("resize", function () {
       clearTimeout(espera);
