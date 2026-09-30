@@ -219,7 +219,7 @@
    * ao último mês deste: a posse é em 1º de janeiro, então o que acontece em
    * janeiro já é do presidente que entrou, e medir do primeiro mês dele em
    * diante deixaria esse pedaço sem dono. É o mesmo ponto de partida do gráfico
-   * de comparação entre mandatos, onde o mês 0 é o dezembro anterior. Sem mês
+   * de comparação entre mandatos, onde o mês 0 é o mês anterior à posse. Sem mês
    * anterior (começo da série), vale o primeiro mês da própria faixa.
    * Em % para índices (Ibovespa e IED), em pontos percentuais para as séries
    * que já são %, e na própria unidade para o resto. Contagem (IPOs) não tem
@@ -691,7 +691,7 @@
   }
 
   /* Comparação entre mandatos: uma linha por mandato, eixo X em meses desde a
-   * posse (mês 0 = dezembro anterior, onde todas partem de zero). Não tem faixa
+   * posse (mês 0 = o mês anterior à posse, onde todas partem de zero). Não tem faixa
    * de governo no fundo — o que separa os mandatos é a cor da linha. */
   function construirComparacao(cartao, L0, nomeTema) {
     var s = cartao.serie, pal = PALETAS[nomeTema];

@@ -78,8 +78,8 @@ Calculados na hora de desenhar. A **média** é dos meses visíveis da faixa. O
 **Δ** vai do **último mês do mandato anterior** até o último mês deste: a posse
 é em 1º de janeiro, então o que acontece em janeiro já é de quem entrou, e medir
 a partir do primeiro mês dele deixaria esse pedaço sem dono. É o mesmo ponto de
-partida do gráfico de comparação entre mandatos, onde o mês 0 é o dezembro
-anterior — e é o que faz os Δ fecharem: na dívida/PIB eles somam +55,2 p.p., que
+partida do gráfico de comparação entre mandatos, onde o mês 0 é o mês anterior
+à posse — e é o que faz os Δ fecharem: na dívida/PIB eles somam +55,2 p.p., que
 é exatamente a distância entre 40,2% em jan/1998 e 95,4% em jul/2026.
 
 A base sai da série inteira, não só do trecho visível, para o Δ de um mandato
@@ -119,20 +119,28 @@ unidade são **suposições** a confirmar contra o Excel:
 
 ### Comparação entre mandatos (Dívida Bruta)
 
-A Dívida Bruta não é uma série no tempo como as outras: vem da **última tabela
-da aba "Dívida Bruta"** do Excel (a que está em p.p.), lida por `le_comparacao`.
 Cada mandato vira uma linha, com o eixo X em meses desde a posse e o valor em
 p.p. do PIB acumulados desde o mês anterior à posse (mês 0 = zero).
 
-As contas são as da planilha: dívida bruta do governo geral (SGS 4502) dividida
-pelo PIB de 12 meses (SGS 4382), e a diferença contra dezembro anterior. As
-datas de mandato vêm da própria tabela — nela, Dilma II vai até abr/2016 e Temer
-começa em mai/2016 (as faixas dos outros gráficos usam ago/2016, a posse
-definitiva).
+Esse gráfico é **calculado pelo script** (`compara_mandatos`), a partir da
+mesma série do cartão de cima — a dívida/PIB da coluna AL. Para cada mandato:
+valor do mês menos o valor do mês anterior à posse, vezes 100. Nada de tabela
+pronta: antes ele lia uma feita à mão na aba "Dívida Bruta", e aquela tabela
+dividia Dilma e Temer em **abr/mai de 2016** enquanto as faixas de governo de
+todos os outros gráficos usam **jul/ago de 2016**. Agora os dois vêm do mesmo
+lugar, a aba "Presidentes" (`le_periodos`), e o site inteiro conta os mandatos
+igual. O que mudou na prática: Dilma II passou de 16 para 19 meses e de +9,4
+para **+11,3 p.p.**; Temer, de 32 para 29 meses e de +13,8 para **+11,9 p.p.**
+Os outros seis mandatos não mudaram nem uma casa decimal.
 
-Para trocar o gráfico por outra tabela nesse formato, aponte `aba` no
-`INDICADORES` para a aba desejada: a função procura o rótulo "Início do
-mandato" mais à direita e lê a tabela que estiver depois dele.
+O teste que fecha a conta: somados, os oito mandatos dão **+44,842 p.p.**, que é
+exatamente o que a dívida andou de dez/1998 (50,587%) a jul/2026 (95,429%) —
+cada mandato começa onde o anterior parou, sem sobra nem buraco.
+
+Mandato que começa antes do primeiro mês da série fica de fora (FHC I, porque a
+série começa em jan/1998 e não há dez/1994 de onde partir). Se faltasse um mês
+no meio de um mandato, a linha pararia ali: o eixo X é "meses desde a posse", e
+pular um mês deslocaria todo o resto.
 
 ### PIB, dívida/PIB e juro real longo
 

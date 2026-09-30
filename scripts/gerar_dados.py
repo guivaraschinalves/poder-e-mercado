@@ -60,11 +60,14 @@ INDICADORES = [
                                         "Tesouro na carteira do Banco Central",
                               formato="pct", casas=2, tipo="linha", variacao="abs", minEixo=0.30,
                               aba="Dívida Bruta", colunas=("AJ", "AL"))),
-    # comparação entre mandatos: vem da última tabela da aba "Dívida Bruta" (em p.p.)
-    ("I", "divida-bruta", dict(titulo="Dívida Bruta do Governo Geral",
-                               subtitulo="Variação desde o início do mandato, em p.p. do PIB · "
-                                         "metodologia do FMI",
-                               formato="pp", casas=1, tipo="comparacao", aba="Dívida Bruta")),
+    # comparação entre mandatos: calculada aqui, a partir da série de cima
+    # (divida-pib), e não de uma tabela pronta da planilha. Os mandatos são os
+    # mesmos da aba "Presidentes" que desenha as faixas de governo do site —
+    # foi isso que corrigiu a divisão Dilma/Temer (ver README).
+    ("—", "divida-bruta", dict(titulo="Dívida Bruta do Governo Geral",
+                               subtitulo="Variação acumulada, em p.p. do PIB, a partir do mês "
+                                         "anterior à posse · metodologia do FMI",
+                               formato="pp", casas=1, tipo="comparacao", derivaDe="divida-pib")),
     # PIB: vêm do "PIB Brasil.xlsx", uma conta por vez no site
     # média geométrica por mandato: a média aritmética de taxas de crescimento não
     # compõe, e a variação do primeiro ao último trimestre do mandato compara duas
@@ -159,31 +162,49 @@ def le_planilhas(caminho):
     return abas
 
 
-def col_num(col):
-    n = 0
-    for ch in col:
-        n = n * 26 + ord(ch) - 64
-    return n
+def mes_mais(mes, n):
+    a, m = map(int, mes.split("-"))
+    t = a * 12 + (m - 1) + n
+    return "%04d-%02d" % (t // 12, t % 12 + 1)
 
 
-def le_comparacao(aba):
-    """Tabela "mês do mandato × mandato": a última da aba, à direita do rótulo
-    "Início do mandato". Linha 1 = nome do mandato; linhas 2, 3, … = mês 1, 2, …
-    do mandato; as linhas "Início do mandato" e "Fim do mandato" dão as datas."""
-    rotulos = [(c, r) for (c, r), v in aba.items() if v == "Início do mandato"]
-    c0, r_ini = max(rotulos, key=lambda k: col_num(k[0]))
-    colunas = sorted({c for (c, r) in aba if r == 1 and col_num(c) > col_num(c0)}, key=col_num)
+def compara_mandatos(dados, periodos):
+    """Δ de cada mandato, mês a mês, em pontos percentuais.
+
+    A conta é sempre a mesma da série de cima: valor do mês menos o valor do
+    **mês anterior à posse**. O presidente toma posse em 5 de janeiro, então
+    janeiro já é dele, e o mês 0 do gráfico (dezembro) é o que ele recebeu.
+
+    Mandato que começa antes do primeiro mês da série fica de fora — não há de
+    onde partir. Se faltar um mês no meio, a linha para ali: o eixo X é "meses
+    desde a posse", e pular um mês deslocaria todo o resto.
+    """
+    por_mes = dict(dados)
     saida = []
-    for c in colunas:
-        valores = []
-        for r in range(2, r_ini):
-            v = aba.get((c, r))
-            if not eh_numero(v):
-                break
-            valores.append(round(float(v), 4))
-        saida.append(dict(nome=aba[(c, 1)].strip(), inicio=serial_para_mes(aba[(c, r_ini)]),
-                          fim=serial_para_mes(aba[(c, r_ini + 1)]), dados=valores))
+    for nome, (inicio, fim) in sorted(periodos.items(), key=lambda kv: kv[1][0]):
+        base = por_mes.get(mes_mais(inicio, -1))
+        if base is None:
+            continue
+        valores, mes = [], inicio
+        while mes <= fim and mes in por_mes:
+            valores.append(round((por_mes[mes] - base) * 100, 3))
+            mes = mes_mais(mes, 1)
+        if valores:
+            saida.append(dict(nome=nome, inicio=inicio, fim=fim, dados=valores))
     return saida
+
+
+def le_periodos(pres):
+    """{"Lula III": ("2023-01", "2026-12"), …} — da aba "Presidentes", que é a
+    mesma origem das faixas de governo do site."""
+    ultima = max(r for (c, r) in pres if c == "A" and eh_numero(pres[(c, r)]))
+    colunas = {pres[(c, 1)]: c for (c, r) in pres if r == 1 and c != "A"}
+    periodos = {}
+    for nome, col in colunas.items():
+        marcados = [serial_para_mes(pres[("A", r)]) for r in range(2, ultima + 1) if (col, r) in pres]
+        if marcados:
+            periodos[nome] = (min(marcados), max(marcados))
+    return periodos
 
 
 # Aba "Base Rating 2": colunas de cada agência. Rótulos (moeda estrangeira,
@@ -407,6 +428,7 @@ def main():
     pib = le_planilhas(PLANILHA_PIB)
     ind = abas["Outros Indicadores"]
     pres = abas["Presidentes"]
+    periodos = le_periodos(pres)
 
     ultima = max(r for (c, r) in ind if c == "A" and eh_numero(ind[(c, r)]))
     meses = {r: serial_para_mes(ind[("A", r)]) for r in range(2, ultima + 1) if ("A", r) in ind}
@@ -453,11 +475,14 @@ def main():
                       f"{len(a['me'])} mudanças (ME), {len(a['eventos'])} ações")
             continue
         if cfg.get("tipo") == "comparacao":
-            cmp = le_comparacao(abas[cfg["aba"]])
-            cfg = {k: v for k, v in cfg.items() if k != "aba"}
-            saida["series"].append(dict(id=id_, coluna="aba " + id_, **{**cfg, "fonte": cfg.get("fonte", FONTE_PADRAO)},
+            origem = next(x for x in saida["series"] if x["id"] == cfg["derivaDe"])
+            cmp = compara_mandatos(origem["dados"], periodos)
+            cfg = {k: v for k, v in cfg.items() if k != "derivaDe"}
+            saida["series"].append(dict(id=id_, coluna="calculado de " + origem["id"],
+                                        **{**cfg, "fonte": cfg.get("fonte", FONTE_PADRAO)},
                                         mandatos=cmp, dados=[]))
-            print(f"  {id_:16s} comparação: " + ", ".join(f"{m['nome']} ({len(m['dados'])} meses)" for m in cmp))
+            print(f"  {id_:16s} comparação de {origem['id']}: "
+                  + ", ".join(f"{m['nome']} ({len(m['dados'])}m, {m['dados'][-1]:+.1f} p.p.)" for m in cmp))
             continue
         cabecalho = (ind.get((col, 1)) or "").strip()
         dados = []
@@ -486,15 +511,7 @@ def main():
             blocos.append("  " + json.dumps(meta, ensure_ascii=False)[:-1] + ', "dados": [' + dados + "]}")
         f.write(",\n".join(blocos) + "\n ]\n}\n")
 
-    # Mandatos: para cada presidente, o primeiro e o último mês marcado com 100.
-    ultima_p = max(r for (c, r) in pres if c == "A" and eh_numero(pres[(c, r)]))
-    colunas = {pres[(c, 1)]: c for (c, r) in pres if r == 1 and c != "A"}
-    periodos = {}
-    for nome, col in colunas.items():
-        marcados = [serial_para_mes(pres[("A", r)]) for r in range(2, ultima_p + 1) if (col, r) in pres]
-        if marcados:
-            periodos[nome] = (min(marcados), max(marcados))
-
+    # Faixas de governo: os mesmos períodos que a comparação entre mandatos usa.
     mandatos = list(ANTERIORES)
     for id_, rotulo, partes, cor, foto in GOVERNOS:
         faixa = [periodos[p] for p in partes]

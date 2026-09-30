@@ -1,5 +1,6 @@
 *.xlsx
 .DS_Store
+__pycache__/
 
 # as planilhas de origem ficam no repo (é delas que o script gera os JSON)
 !dados/*.xlsx
