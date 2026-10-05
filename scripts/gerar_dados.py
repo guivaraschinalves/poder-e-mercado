@@ -8,8 +8,10 @@ consome:
                             "Dívida Bruta" e o rating da aba "Base Rating 2"
   dados/mandatos.json     — faixas de governo, derivadas da aba "Presidentes"
 
-Também lê "dados/PIB Brasil.xlsx" (abas trimestrais do PIB) e baixa a taxa da
-NTN-B do dado aberto do Tesouro Transparente.
+Também lê "dados/PIB Brasil.xlsx" (abas trimestrais do PIB), baixa a taxa da
+NTN-B do dado aberto do Tesouro Transparente e, no fim, põe no dado de hoje as
+séries que o Banco Central publica no SGS e o Ibovespa (ver `atualizar`): a
+planilha é o histórico, o SGS é quem revisa e quem está no mês mais recente.
 
 Uso:
     python3 scripts/gerar_dados.py
@@ -21,8 +23,10 @@ import json
 import os
 import re
 import sys
+import time
 import zipfile
 import datetime
+import urllib.request
 import xml.etree.ElementTree as ET
 
 NS = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
@@ -400,6 +404,295 @@ def le_ntnb():
     return [[mes, round(por_mes[mes][1] / 100, 6)] for mes in sorted(por_mes)]
 
 
+# --------------------------------------------------------------------------
+# SGS: as séries do Banco Central, direto da API aberta (sem chave)
+# --------------------------------------------------------------------------
+# A planilha é o histórico do site, mas quase tudo nela vem do Banco Central, e
+# no SGS as mesmas séries estão sempre no mês mais recente — e revisadas. Cada
+# conta abaixo foi conferida mês a mês contra a coluna correspondente da
+# planilha, e o script reimprime essa conferência a cada rodada: onde as duas
+# existem, o SGS reproduz a coluna. O que ele acrescenta são os meses novos, as
+# revisões do BC e o mês que estava provisório quando a planilha foi preenchida.
+SGS = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.%d/dados?formato=json"
+# Séries diárias: o SGS responde 406 quando se pede uma delas inteira, então vão
+# com data de início. Só interessa o último pregão (para fechar o mês corrente),
+# e esta janela cobre feriado longo e atraso de publicação com folga.
+DIARIAS = {1, 10813}
+DIAS_PTAX = 120
+
+# O que cada código é, para o log e o README não dependerem de consulta externa.
+# Quem aparece no log é a lista do que foi baixado de fato (`BAIXADAS`), e não
+# esta tabela: assim um código novo numa conta não some do relatório por
+# esquecimento.
+BAIXADAS = []
+NOMES_SGS = {
+    1: "dólar (venda) — PTAX diária",
+    3695: "dólar (compra) — fim do mês",
+    3696: "dólar (venda) — fim do mês",
+    3697: "dólar (compra) — média do mês",
+    3698: "dólar (venda) — média do mês",
+    4189: "Selic acumulada no mês, anualizada",
+    4382: "PIB acumulado em 12 meses, R$ milhões correntes",
+    4502: "dívida bruta do governo geral, R$ milhões",
+    5783: "resultado primário do Governo Federal e do BC, % do PIB em 12 meses",
+    5786: "resultado primário dos governos estaduais e municipais, % do PIB em 12 meses",
+    10813: "dólar (compra) — PTAX diária",
+    22885: "investimento direto no país (IDP), líquido, US$ milhões no mês",
+    29038: "endividamento das famílias exc. crédito habitacional, %",
+}
+
+
+def sgs(cod, tentativas=4):
+    """Uma série do SGS → {"aaaa-mm-dd": valor}. O SGS data as séries mensais no
+    dia 1º, então o mês é só os sete primeiros caracteres da chave.
+
+    Ele devolve corpo vazio quando engasga (e a série 7, do Ibovespa, foi
+    desativada e responde sempre assim), por isso as tentativas."""
+    url = SGS % cod
+    if cod in DIARIAS:
+        inicio = datetime.date.today() - datetime.timedelta(days=DIAS_PTAX)
+        url += "&dataInicial=" + inicio.strftime("%d/%m/%Y")
+    erro = None
+    for n in range(tentativas):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url), timeout=180) as r:
+                bruto = json.load(r)
+            break
+        except Exception as e:                      # inclui corpo vazio
+            erro = e
+            time.sleep(3)
+    else:
+        raise RuntimeError("SGS %d: %s" % (cod, erro))
+    saida = {}
+    for x in bruto:
+        if x.get("valor") in (None, ""):
+            continue
+        d, m, a = x["data"].split("/")
+        saida["%s-%s-%s" % (a, m, d)] = float(x["valor"])
+    BAIXADAS.append(cod)
+    return saida
+
+
+def soma_movel(serie, n=12):
+    """Soma dos n meses que terminam em cada mês. Mês sem os n−1 meses
+    imediatamente anteriores fica de fora: um buraco no meio interrompe a conta
+    em vez de somar 11 meses como se fossem 12."""
+    meses = sorted(serie)
+    saida = {}
+    for i in range(n - 1, len(meses)):
+        janela = meses[i - n + 1:i + 1]
+        if mes_mais(janela[0], n - 1) != janela[-1]:
+            continue
+        saida[janela[-1]] = sum(serie[m] for m in janela)
+    return saida
+
+
+def series_do_sgs():
+    """{id do indicador: {mês: valor}}, na mesma unidade da coluna da planilha,
+    mais o dólar do fim do mês (que o Ibovespa em dólar usa) e o dia da PTAX
+    que fechou o mês corrente."""
+    cache = {}
+
+    def dia(cod):
+        if cod not in cache:
+            cache[cod] = sgs(cod)
+        return cache[cod]
+
+    def mes(cod):
+        return {d[:7]: v for d, v in dia(cod).items()}
+
+    def ptax(compra, venda, casas):
+        c, v = mes(compra), mes(venda)
+        return {m: round((c[m] + v[m]) / 2, casas) for m in c if m in v}
+
+    def completar(serie, casas):
+        """O mês corrente não tem média nem fechamento mensal no SGS enquanto
+        não acaba: entra com a PTAX do último dia publicado."""
+        c, v = dia(10813), dia(1)
+        ultimo = max(d for d in c if d in v)
+        serie.setdefault(ultimo[:7], round((c[ultimo] + v[ultimo]) / 2, casas))
+        return ultimo
+
+    # o cartão do dólar é a média do mês; o do Ibovespa em dólar é o fim do mês.
+    # Cinco casas: a média de dois valores de quatro casas tem no máximo cinco, e
+    # é com cinco que a planilha guarda (5,64315, não 5,6432).
+    dolar = ptax(3697, 3698, 5)
+    fim_de_mes = ptax(3695, 3696, 6)
+    ptax_de = completar(dolar, 5)
+    completar(fim_de_mes, 6)
+
+    # "governo geral" = Governo Federal e Banco Central + governos estaduais e
+    # municipais, as duas linhas do NFSP que sobram tirando as empresas
+    # estatais. O SGS publica o déficit com sinal positivo; aqui o superávit é
+    # que é positivo, como na planilha.
+    uniao, locais = mes(5783), mes(5786)
+    primario = {m: round(-(uniao[m] + locais[m]) / 100, 4) for m in uniao if m in locais}
+
+    divida, pib = mes(4502), mes(4382)
+
+    series = {
+        "selic": {m: round(v / 100, 4) for m, v in mes(4189).items()},
+        "dolar": dolar,
+        "primario": primario,
+        "divida-pib": {m: round(divida[m] / pib[m], 6) for m in divida if m in pib},
+        # o SGS publica o IDP mês a mês; o cartão mostra o acumulado em 12 meses
+        "ied": {m: round(v, 6) for m, v in soma_movel(mes(22885)).items()},
+        "familias": {m: round(v / 100, 4) for m, v in mes(29038).items()},
+    }
+    return series, fim_de_mes, ptax_de
+
+
+# --------------------------------------------------------------------------
+# Ibovespa
+# --------------------------------------------------------------------------
+# O SGS tinha o Ibovespa na série 7 e ela foi desativada (responde vazio), e a
+# B3 só publica a cotação do momento, sem histórico. O que sobra de público é a
+# série diária do ^BVSP; o último pregão dela é confrontado com a cotação da
+# própria B3, para um número torto não entrar calado.
+YAHOO_IBOV = ("https://query2.finance.yahoo.com/v8/finance/chart/%5EBVSP"
+              "?interval=1d&range=2y")
+B3_IBOV = "https://cotacao.b3.com.br/mds/api/v1/instrumentQuotation/IBOV"
+# O quanto as duas fontes podem discordar no último pregão. Rodando com a bolsa
+# aberta elas discordam de verdade: a B3 devolve a cotação do momento e o
+# histórico do ^BVSP só anda no fechamento. Acima disto o mês corrente não entra
+# — os meses fechados entram de qualquer forma, que esses ninguém revisa.
+TOLERANCIA_IBOV = 0.01
+
+
+def fechamentos_ibov():
+    """{mês: fechamento do último pregão do mês} nos últimos dois anos, e a data
+    e o valor do pregão mais recente. No mês corrente o "último pregão" é o de
+    hoje — é de propósito, e a rodada seguinte corrige sozinha."""
+    req = urllib.request.Request(YAHOO_IBOV, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=120) as r:
+        res = json.load(r)["chart"]["result"][0]
+    por_dia = {}
+    for t, v in zip(res["timestamp"], res["indicators"]["quote"][0]["close"]):
+        if v is None:
+            continue
+        d = datetime.datetime.fromtimestamp(t, datetime.timezone.utc)
+        por_dia[d.strftime("%Y-%m-%d")] = v
+    por_mes = {}
+    for d in sorted(por_dia):
+        por_mes[d[:7]] = float(round(por_dia[d]))
+    ultimo = max(por_dia)
+    return por_mes, ultimo, por_dia[ultimo]
+
+
+def cotacao_b3():
+    """O Ibovespa que a B3 publica agora, só para conferir o do ^BVSP."""
+    with urllib.request.urlopen(urllib.request.Request(B3_IBOV), timeout=60) as r:
+        return float(json.load(r)["Trad"][0]["scty"]["SctyQtn"]["curPrc"])
+
+
+# --------------------------------------------------------------------------
+# Juntar a planilha com o dado de hoje
+# --------------------------------------------------------------------------
+
+def aplicar(serie, nova, desde=None):
+    """Sobrepõe `nova` à coluna da planilha — onde os dois têm o mês vale o
+    dado baixado, que é o revisado — e conta no log o que a rodada mudou. Mês
+    que só a planilha tem continua (o SGS 4502, por exemplo, começa em fev/1998
+    e a coluna da dívida tem jan/1998).
+
+    `desde` limita a sobreposição a um mês em diante. Sem ele a conta vale do
+    primeiro mês da coluna em diante, e não antes: no SGS quase toda série
+    começa bem antes de 1995 — a do dólar vem de 1953, em cruzeiros, e três
+    trocas de moeda depois ela achataria o gráfico inteiro. Quem decide onde a
+    série começa é a planilha; o SGS atualiza e estende para a frente.
+
+    No Ibovespa o `desde` é explícito e mais curto ainda: o fechamento não é
+    revisado nunca, e a fonte dele arredonda, então reescrever o passado só
+    traria ruído de um ponto para cá e para lá."""
+    velho = dict(serie["dados"])
+    if desde is None and velho:
+        desde = min(velho)
+    junto = dict(velho)
+    for m, v in nova.items():
+        if desde is None or m >= desde:
+            junto[m] = v
+    serie["dados"] = [[m, junto[m]] for m in sorted(junto)]
+    entrou = [m for m in sorted(junto) if m not in velho]
+    mudou = [m for m in sorted(junto) if m in velho and junto[m] != velho[m]]
+    print("  %-16s %4d meses  %s → %s" % (serie["id"], len(junto), min(junto), max(junto)))
+    if entrou:
+        print("    + %d novo(s): %s" % (len(entrou), ", ".join("%s %s" % (m, junto[m]) for m in entrou)))
+    if mudou:
+        # a contagem vem antes da lista porque ela é o que importa: um punhado de
+        # meses é revisão do Banco Central, a série toda é mudança de precisão
+        # (o IDP mensal do SGS tem uma casa decimal e a planilha tinha seis)
+        print("    ~ %d corrigido(s)%s: %s"
+              % (len(mudou), " (os 4 últimos)" if len(mudou) > 4 else "",
+                 ", ".join("%s %s→%s" % (m, velho[m], junto[m]) for m in mudou[-4:])))
+    if not entrou and not mudou:
+        print("    (igual à planilha)")
+
+
+def atualizar(saida, periodos):
+    """Põe no dado de hoje o que não precisa da planilha: as séries do SGS, o
+    Ibovespa, o Ibovespa em dólar (que sai dos dois) e a comparação entre
+    mandatos (que sai da dívida/PIB já atualizada).
+
+    Rede fora do ar não quebra a rodada: o que não baixar fica como está na
+    planilha, e o script diz qual foi."""
+    por_id = {s["id"]: s for s in saida["series"]}
+
+    try:
+        series, fim_de_mes, ptax_de = series_do_sgs()
+        print("  SGS: %s" % ", ".join("%d (%s)" % (c, NOMES_SGS.get(c, "?"))
+                                       for c in sorted(set(BAIXADAS))))
+        print("  mês corrente fechado com a PTAX de %s" % ptax_de)
+    except Exception as e:
+        print("  SGS fora do ar (%s): as séries do Banco Central ficam como estão na planilha" % e)
+        series, fim_de_mes = {}, {}
+    for id_ in sorted(series):
+        aplicar(por_id[id_], series[id_])
+
+    try:
+        fechos, pregao, valor = fechamentos_ibov()
+        b3 = cotacao_b3()
+        erro = abs(b3 - valor) / valor
+        print("  Ibovespa: último pregão %s = %.0f (a B3 publica %.0f, %.3f%% de diferença)"
+              % (pregao, valor, b3, 100 * erro))
+        if erro > TOLERANCIA_IBOV:
+            print("    o mês corrente (%s) fica de fora: as duas fontes não confirmam o mesmo "
+                  "número. Rode de novo com a bolsa fechada." % pregao[:7])
+            fechos.pop(pregao[:7], None)
+        aplicar(por_id["ibov"], fechos, desde=max(dict(por_id["ibov"]["dados"])))
+    except SystemExit:
+        raise
+    except Exception as e:
+        print("  Ibovespa não baixou (%s): fica como está na planilha" % e)
+
+    # Ibovespa em dólar: o índice do fim do mês dividido pelo dólar do fim do
+    # mês (média de compra e venda da PTAX) — e não pela média do mês, que é o
+    # que o cartão do dólar mostra. As duas contas convivem na planilha; esta é
+    # a que reproduz a coluna F, e o `confere` abaixo é o que garante isso.
+    ibov = dict(por_id["ibov"]["dados"])
+    if fim_de_mes and ibov:
+        nova = {m: round(ibov[m] / fim_de_mes[m], 6) for m in ibov if m in fim_de_mes}
+        velho = dict(por_id["ibov-dolar"]["dados"])
+        # o último mês da planilha estava provisório (o índice e a PTAX do dia
+        # ainda não tinham saído quando ela foi preenchida), então ele não conta
+        limite = max(velho)
+        pior = max(((abs(nova[m] - velho[m]), m) for m in nova if m in velho and m < limite),
+                   default=(0, None))
+        if pior[0] > 1:
+            sys.exit("Ibovespa em dólar: a conta deixou de reproduzir a coluna F da planilha "
+                     "(%s erra em %.1f pontos). Confira a série do dólar antes de gravar."
+                     % (pior[1], pior[0]))
+        print("  Ibovespa em dólar: recalculado; a conta reproduz a coluna F da planilha "
+              "(pior mês: %s, %.4f ponto)" % (pior[1], pior[0]))
+        aplicar(por_id["ibov-dolar"], nova)
+
+    # a comparação entre mandatos sai da dívida/PIB: refazer depois dela andar
+    cmp_ = compara_mandatos(por_id["divida-pib"]["dados"], periodos)
+    por_id["divida-bruta"]["mandatos"] = cmp_
+    print("  divida-bruta     comparação refeita: "
+          + ", ".join("%s (%dm, %+.1f p.p.)" % (m["nome"], len(m["dados"]), m["dados"][-1])
+                      for m in cmp_))
+
+
 def eh_numero(txt):
     try:
         float(txt)
@@ -496,6 +789,11 @@ def main():
             print(f"  {id_:16s} {len(dados):4d} meses  {dados[0][0]} → {dados[-1][0]}  último={dados[-1][1]}")
         else:
             print(f"  {id_:16s} sem dados na coluna {col} ({cabecalho})")
+
+    # Até aqui tudo saiu da planilha. Agora o que tem fonte própria vai para o
+    # dado de hoje: o SGS, o Ibovespa e o que deriva deles.
+    print("Atualizando com o dado de hoje:")
+    atualizar(saida, periodos)
 
     # Uma série por bloco, com os pares [mês, valor] numa linha só (diff legível).
     with open(SAIDA_INDICADORES, "w", encoding="utf-8") as f:
